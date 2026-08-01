@@ -82,10 +82,30 @@ Run with no command to launch the GUI.
 - A single top-level item extracts as itself; anything else is wrapped in
   a folder named after the archive. Existing files are never overwritten
   ("name 2")
-- zip-slip protection: absolute paths, `..`, drive letters, and NTFS ADS
-  names are skipped (reported as warnings); symlink entries are skipped
 - Extracts to the archive's own folder by default, or `-o <dir>`
   (created if missing, like `unzip -d`)
+
+### Extraction safety
+
+An unarchiver runs attacker-chosen structure against your filesystem, so
+extraction refuses malformed archives rather than trying to salvage them
+(see [ADR-012](https://github.com/nlink-jp/.github/blob/main/adr/012-zip-porter-hardening.md)):
+
+- **zip-slip protection** — absolute paths, `..`, drive letters, and NTFS
+  alternate-data-stream names are skipped and reported; symlink entries
+  are skipped in both directions
+- **Decompression bombs** — an entry that expands past the size its header
+  declares is aborted mid-stream, and the whole archive is refused up front
+  when its declared content cannot fit in the destination's free space
+- **Overlapping entries** — archives whose entries share compressed data
+  (the `42.zip` construction) are rejected while parsing
+- **Quarantine propagation** — `com.apple.quarantine` on a downloaded
+  archive is copied onto everything extracted, so Gatekeeper still
+  evaluates executables that arrive inside a ZIP
+- **Duplicate names** — collisions (including case-only and NFC/NFD
+  differences, which APFS treats as one name) are extracted under numbered
+  names instead of silently overwriting each other
+- Integrity is verified for every entry: HMAC for AES, CRC-32 otherwise
 
 ### inspect
 

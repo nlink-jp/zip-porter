@@ -115,6 +115,10 @@ enum CLIRun {
         FileHandle.standardError.write(Data("zip-porter: warning: \(message)\n".utf8))
     }
 
+    static func formatBytes(_ bytes: UInt64) -> String {
+        ByteCountFormatter.string(fromByteCount: Int64(clamping: bytes), countStyle: .file)
+    }
+
     // MARK: - pack
 
     static func pack(_ rawArgs: [String]) -> Never {
@@ -205,6 +209,9 @@ enum CLIRun {
             let result = try runUnpack(zipURL: zipURL, options: options)
             for name in result.skippedUnsafe { warn("skipped unsafe path: \(name)") }
             for name in result.skippedSymlinks { warn("skipped symlink: \(name)") }
+            for rename in result.renamedDuplicates {
+                warn("duplicate entry '\(rename.original)' extracted as '\(rename.chosen)'")
+            }
             print("\(result.root.path): \(result.extractedFiles) files (names: \(result.detectedEncoding.rawValue))")
             exit(0)
         } catch let error as ZipReaderError {
@@ -217,11 +224,17 @@ enum CLIRun {
             case .unsupportedMethod(let m): fail("unsupported compression method \(m)")
             case .unsupportedFeature(let f): fail("unsupported feature: \(f)")
             case .corrupt(let detail): fail("corrupted archive (\(detail))")
+            case .sizeExceedsDeclared(let name):
+                fail("'\(name)' expands beyond the size its header declares — refusing (possible decompression bomb)")
+            case .overlappingEntries:
+                fail("archive entries share overlapping data ranges — refusing (malformed or a decompression bomb)")
             }
         } catch let error as Unpacker.Failure {
             switch error {
             case .emptyArchive: fail("archive contains no extractable entries")
             case .destinationNotADirectory(let path): fail("destination is not a directory: \(path)")
+            case .insufficientSpace(let required, let available):
+                fail("archive needs \(formatBytes(required)) but only \(formatBytes(available)) is free at the destination")
             }
         } catch {
             fail("\(error.localizedDescription)")
@@ -286,6 +299,24 @@ enum CLIRun {
             print("")
             print("utf8-flagged names: \(utf8Flagged)/\(reader.entries.count)")
             print("encryption: \(encrypted.isEmpty ? "none" : encrypted.sorted().joined(separator: ", "))")
+            print("declared total size: \(formatBytes(reader.declaredTotalSize))")
+
+            // What extraction would refuse or alter, reported before the
+            // user commits to extracting.
+            var unsafePaths: [String] = []
+            var symlinks: [String] = []
+            for entry in reader.entries {
+                let name = reader.name(of: entry)
+                if Unpacker.sanitizeForDiagnostics(name) == nil { unsafePaths.append(name) }
+                if entry.isSymlink { symlinks.append(name) }
+            }
+            if !unsafePaths.isEmpty {
+                print("unsafe paths (would be skipped): \(unsafePaths.count)")
+                for p in unsafePaths { print("  \(p)") }
+            }
+            if !symlinks.isEmpty {
+                print("symlinks (would be skipped): \(symlinks.count)")
+            }
             if !junk.isEmpty {
                 print("junk entries (macOS metadata): \(junk.count)")
                 for j in junk { print("  \(j)") }

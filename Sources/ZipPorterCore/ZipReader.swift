@@ -9,6 +9,14 @@ public enum ZipReaderError: Error, Equatable {
     case wrongPassword
     case crcMismatch(entryName: String)
     case authenticationFailed(entryName: String)
+    /// An entry produced more output than its header declared — a
+    /// decompression bomb, caught mid-stream before the write completes
+    /// (ADR-012 §1).
+    case sizeExceedsDeclared(entryName: String)
+    /// Entry data ranges overlap: the `42.zip` construction, where many
+    /// central-directory entries point at one compressed payload
+    /// (ADR-012 §3). Legitimate writers never produce this.
+    case overlappingEntries
 }
 
 /// Random-access ZIP reader: parses the central directory eagerly, streams
@@ -28,12 +36,41 @@ public final class ZipReader {
         fileSize = try file.seekToEnd()
         do {
             try parseCentralDirectory()
+            try validateEntryRanges()
         } catch {
             try? file.close()
             throw error
         }
         detectedEncoding = EncodingDetector.detect(
             entries.filter { !$0.flags.contains(.utf8Name) }.map(\.rawName))
+    }
+
+    /// Total uncompressed size the archive declares — the extraction
+    /// budget checked against free space before writing (ADR-012 §2).
+    public var declaredTotalSize: UInt64 {
+        entries.reduce(UInt64(0)) { $0 &+ $1.uncompressedSize }
+    }
+
+    /// Reject archives whose entry byte ranges overlap or run past EOF.
+    /// Ranges are approximated from the central directory (local header +
+    /// name + data); the 30-byte fixed header is the floor, so overlap
+    /// detection stays conservative — it never flags a valid archive.
+    private func validateEntryRanges() throws {
+        var ranges: [(start: UInt64, end: UInt64)] = []
+        ranges.reserveCapacity(entries.count)
+        for entry in entries where !entry.isDirectory {
+            let start = entry.localHeaderOffset
+            let minimumHeader = UInt64(30 + entry.rawName.count)
+            let end = start &+ minimumHeader &+ entry.compressedSize
+            guard end <= fileSize else {
+                throw ZipReaderError.corrupt("entry data runs past end of file")
+            }
+            ranges.append((start, end))
+        }
+        ranges.sort { $0.start < $1.start }
+        for i in 1..<max(ranges.count, 1) where ranges[i].start < ranges[i - 1].end {
+            throw ZipReaderError.overlappingEntries
+        }
     }
 
     deinit { try? file.close() }
@@ -96,7 +133,10 @@ public final class ZipReader {
             cdOffset = z64.readU64(at: 48)
         }
 
-        guard cdOffset + cdSize <= fileSize, cdSize < 1 << 31 else {
+        // 256 MiB ceiling: a million entries occupy roughly 100 MB of
+        // central directory, so this stays far above real archives while
+        // bounding the pre-extraction allocation (ADR-012).
+        guard cdOffset + cdSize <= fileSize, cdSize <= 256 << 20 else {
             throw ZipReaderError.corrupt("central directory out of bounds")
         }
         let cd = try read(at: cdOffset, count: Int(cdSize))
@@ -270,7 +310,14 @@ public final class ZipReader {
 
         var crc = CRC32()
         var outCount: UInt64 = 0
+        let declaredSize = entry.uncompressedSize
         func out(_ d: Data) throws {
+            // Fail-fast: stop the moment output exceeds what the header
+            // declared, instead of writing an unbounded amount and only
+            // then failing the size check (ADR-012 §1).
+            guard outCount &+ UInt64(d.count) <= declaredSize else {
+                throw ZipReaderError.sizeExceedsDeclared(entryName: name(of: entry))
+            }
             crc.update(d)
             outCount += UInt64(d.count)
             try sink(d)

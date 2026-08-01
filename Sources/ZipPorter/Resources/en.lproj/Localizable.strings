@@ -47,3 +47,17 @@
 "Reveal extracted items in Finder" = "Reveal extracted items in Finder";
 "Move the archive to the Trash" = "Move the archive to the Trash";
 "Creating" = "Creating";
+"This name cannot be stored as CP932:" = "This name cannot be stored as CP932:";
+"An entry expands far beyond the size the archive declares — it may be a decompression bomb." = "An entry expands far beyond the size the archive declares — it may be a decompression bomb.";
+"The archive's entries share overlapping data — it is malformed or a decompression bomb." = "The archive's entries share overlapping data — it is malformed or a decompression bomb.";
+"The archive is damaged or was tampered with." = "The archive is damaged or was tampered with.";
+"This file is not a ZIP archive." = "This file is not a ZIP archive.";
+"Not enough free space to extract this archive." = "Not enough free space to extract this archive.";
+"Needed:" = "Needed:";
+"Available:" = "Available:";
+"The archive contains nothing that can be extracted." = "The archive contains nothing that can be extracted.";
+"The destination is not a folder." = "The destination is not a folder.";
+"Skipped entries with unsafe paths:" = "Skipped entries with unsafe paths:";
+"Skipped symbolic links:" = "Skipped symbolic links:";
+"Duplicate names were extracted under new names:" = "Duplicate names were extracted under new names:";
+"Extracted with changes" = "Extracted with changes";

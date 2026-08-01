@@ -38,17 +38,46 @@ public enum Unpacker {
         public var skippedUnsafe: [String]
         /// Symlink entries skipped by policy.
         public var skippedSymlinks: [String]
+        /// Entries whose names collided with an earlier entry and were
+        /// extracted under a numbered name ("original" → "chosen").
+        public var renamedDuplicates: [(original: String, chosen: String)]
+        /// True when the archive's quarantine attribute was propagated to
+        /// the extracted files.
+        public var quarantinePropagated: Bool
         public var detectedEncoding: NameEncoding
     }
 
     public enum Failure: Error, Equatable {
         case emptyArchive
         case destinationNotADirectory(String)
+        /// The archive declares more content than the destination volume
+        /// can hold — checked before writing anything (ADR-012 §2).
+        case insufficientSpace(required: UInt64, available: UInt64)
+    }
+
+    /// Headroom left free on the destination volume by the pre-flight
+    /// budget check.
+    static let spaceMargin: UInt64 = 64 << 20
+
+    /// Free bytes on the volume holding `url`, or nil when unavailable
+    /// (the budget check then simply does not run).
+    static func freeSpace(at url: URL) -> UInt64? {
+        guard let values = try? url.resourceValues(
+            forKeys: [.volumeAvailableCapacityForImportantUsageKey]),
+            let capacity = values.volumeAvailableCapacityForImportantUsage
+        else { return nil }
+        return capacity >= 0 ? UInt64(capacity) : nil
     }
 
     /// Split a decoded entry name into safe path components, or nil when the
     /// path must be rejected (zip-slip). Backslashes count as separators —
     /// some Windows tools write them.
+    /// `sanitize` exposed for `inspect`, so a diagnostic run reports the
+    /// same verdict extraction would reach.
+    public static func sanitizeForDiagnostics(_ decodedName: String) -> [String]? {
+        sanitize(decodedName)
+    }
+
     static func sanitize(_ decodedName: String) -> [String]? {
         let unified = decodedName.replacingOccurrences(of: "\\", with: "/")
         if unified.hasPrefix("/") { return nil }
@@ -85,16 +114,44 @@ public enum Unpacker {
 
         var skippedUnsafe: [String] = []
         var skippedSymlinks: [String] = []
+        var renamedDuplicates: [(original: String, chosen: String)] = []
         var work: [(entry: ZipEntry, components: [String])] = []
+        // Collision keys are NFC + case-folded because APFS is
+        // case-insensitive by default and stores either normalization —
+        // "Report.txt", "report.txt" and an NFD "データ.txt" all land on
+        // one file if we don't uniquify (ADR-012 §5).
+        var claimedPaths = Set<String>()
+        func collisionKey(_ components: [String]) -> String {
+            components.joined(separator: "/")
+                .precomposedStringWithCanonicalMapping
+                .lowercased()
+        }
+
         for entry in reader.entries {
             let name = reader.name(of: entry, forcedEncoding: options.forcedEncoding)
-            guard let components = sanitize(name) else {
+            guard var components = sanitize(name) else {
                 skippedUnsafe.append(name)
                 continue
             }
             if entry.isSymlink {
                 skippedSymlinks.append(name)
                 continue
+            }
+            // Directories legitimately repeat (a parent listed once per
+            // archive plus implied by children); only files collide.
+            if !entry.isDirectory {
+                let originalPath = components.joined(separator: "/")
+                if claimedPaths.contains(collisionKey(components)) {
+                    let leaf = components[components.count - 1]
+                    var n = 2
+                    repeat {
+                        components[components.count - 1] = PathUtil.numberedVariant(leaf, n)
+                        n += 1
+                    } while claimedPaths.contains(collisionKey(components))
+                    renamedDuplicates.append(
+                        (original: originalPath, chosen: components[components.count - 1]))
+                }
+                claimedPaths.insert(collisionKey(components))
             }
             work.append((entry, components))
         }
@@ -105,6 +162,17 @@ public enum Unpacker {
         if options.password == nil,
            work.contains(where: { $0.entry.encryption != .none && !$0.entry.isDirectory }) {
             throw ZipReaderError.passwordRequired
+        }
+
+        // Pre-flight budget: refuse before writing when the declared
+        // content cannot fit on the destination volume. This is what stops
+        // overlap bombs from filling a disk even when every individual
+        // entry is honest about its own size (ADR-012 §2).
+        let required = reader.declaredTotalSize
+        if let available = freeSpace(at: destBase) {
+            guard required &+ Self.spaceMargin <= available else {
+                throw Failure.insufficientSpace(required: required, available: available)
+            }
         }
 
         // Folder policy decides whether content goes into a wrapper folder
@@ -151,6 +219,13 @@ public enum Unpacker {
 
         var files = 0
         var directories = 0
+        // Downloaded archives carry com.apple.quarantine; everything we
+        // write from them must carry it too, or Gatekeeper never sees the
+        // contents (ADR-012 §4).
+        let quarantine = XattrUtil.quarantine(of: zipURL)
+        if let quarantine, wrap {
+            XattrUtil.applyQuarantine(quarantine, to: root)
+        }
 
         func extractAll() throws {
             for (entry, rawComponents) in work {
@@ -195,6 +270,9 @@ public enum Unpacker {
                 if !attrs.isEmpty {
                     try? FileManager.default.setAttributes(attrs, ofItemAtPath: target.path)
                 }
+                if let quarantine {
+                    XattrUtil.applyQuarantine(quarantine, to: target)
+                }
             }
         }
 
@@ -218,6 +296,8 @@ public enum Unpacker {
             extractedDirectories: directories,
             skippedUnsafe: skippedUnsafe,
             skippedSymlinks: skippedSymlinks,
+            renamedDuplicates: renamedDuplicates,
+            quarantinePropagated: quarantine != nil,
             detectedEncoding: options.forcedEncoding ?? reader.detectedEncoding)
     }
 }

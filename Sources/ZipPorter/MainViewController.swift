@@ -290,6 +290,36 @@ final class MainViewController: NSViewController, DropViewDelegate {
         }
     }
 
+    /// Security-relevant outcomes must not be silent in the GUI the way a
+    /// CLI warning line can be: unsafe paths were dropped, or entries were
+    /// renamed to avoid overwriting each other.
+    private func reportExtractionNotices(_ result: Unpacker.Result) {
+        var lines: [String] = []
+        if !result.skippedUnsafe.isEmpty {
+            lines.append(L("Skipped entries with unsafe paths:") + "\n"
+                + result.skippedUnsafe.prefix(10).map { "  \($0)" }.joined(separator: "\n"))
+        }
+        if !result.skippedSymlinks.isEmpty {
+            lines.append(L("Skipped symbolic links:") + "\n"
+                + result.skippedSymlinks.prefix(10).map { "  \($0)" }.joined(separator: "\n"))
+        }
+        if !result.renamedDuplicates.isEmpty {
+            lines.append(L("Duplicate names were extracted under new names:") + "\n"
+                + result.renamedDuplicates.prefix(10)
+                    .map { "  \($0.original) → \($0.chosen)" }.joined(separator: "\n"))
+        }
+        guard !lines.isEmpty else { return }
+        let alert = NSAlert()
+        alert.messageText = L("Extracted with changes")
+        alert.informativeText = lines.joined(separator: "\n\n")
+        alert.alertStyle = .informational
+        if let hostWindow {
+            alert.beginSheetModal(for: hostWindow)
+        } else {
+            alert.runModal()
+        }
+    }
+
     private func finishUnpack(zip: URL, result: Unpacker.Result, prefs: Preferences) {
         if prefs.folderDate == .archive, result.createdWrapper,
            let mtime = (try? FileManager.default.attributesOfItem(atPath: zip.path))?[.modificationDate] as? Date {
@@ -302,19 +332,47 @@ final class MainViewController: NSViewController, DropViewDelegate {
         if prefs.revealInFinder {
             NSWorkspace.shared.activateFileViewerSelecting(result.extractedTopItems)
         }
+        reportExtractionNotices(result)
     }
 
     private static func describe(_ error: Error) -> String {
         switch error {
         case let e as ZipWriterError:
             if case .nameNotEncodable(let name) = e {
-                return "'\(name)' — CP932"
+                return L("This name cannot be stored as CP932:") + " \(name)"
             }
             return "\(e)"
         case let e as ZipReaderError:
-            return "\(e)"
+            switch e {
+            case .sizeExceedsDeclared(let name):
+                return L("An entry expands far beyond the size the archive declares — it may be a decompression bomb.")
+                    + "\n\(name)"
+            case .overlappingEntries:
+                return L("The archive's entries share overlapping data — it is malformed or a decompression bomb.")
+            case .crcMismatch, .authenticationFailed:
+                return L("The archive is damaged or was tampered with.")
+            case .notAZipFile:
+                return L("This file is not a ZIP archive.")
+            default:
+                return "\(e)"
+            }
+        case let e as Unpacker.Failure:
+            switch e {
+            case .insufficientSpace(let required, let available):
+                return L("Not enough free space to extract this archive.")
+                    + "\n" + L("Needed:") + " \(byteString(required))  "
+                    + L("Available:") + " \(byteString(available))"
+            case .emptyArchive:
+                return L("The archive contains nothing that can be extracted.")
+            case .destinationNotADirectory:
+                return L("The destination is not a folder.")
+            }
         default:
             return error.localizedDescription
         }
+    }
+
+    private static func byteString(_ bytes: UInt64) -> String {
+        ByteCountFormatter.string(fromByteCount: Int64(clamping: bytes), countStyle: .file)
     }
 }

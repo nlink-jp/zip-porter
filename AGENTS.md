@@ -28,9 +28,11 @@ make brew       # generate the Homebrew cask into ../homebrew-tap
 
 - `zip-porter --version` prints the version and exits before AppKit starts
   (`brew test` depends on this).
-- `scripts/gen-fixtures.sh` regenerates `Tests/.../testdata` with external
-  tools (zip, ditto, python3, 7zz — `brew install 7zip`). Fixtures are
-  committed; rerun only to change the fixture set.
+- `scripts/gen-fixtures.sh` regenerates the benign `Tests/.../testdata`
+  fixtures with external tools (zip, ditto, python3, 7zz —
+  `brew install 7zip`); `scripts/gen-hostile-fixtures.py <dir>` regenerates
+  the ADR-012 attack fixtures. Both sets are committed; rerun only to
+  change what the fixtures contain.
 
 ## Layout
 
@@ -61,9 +63,17 @@ docs/{en,ja}/               RFP (design of record)
   no cloud. Propose an ADR before revisiting.
 - **Crypto changes require cross-verification fixtures**, not just unit
   tests (7-Zip / Info-ZIP / Windows-made ZIPs; see gen-fixtures.sh).
-- **Security invariants**: zip-slip guard in Unpacker.sanitize, symlinks
-  skipped both directions, passwords via prompt only (never argv),
-  passwordRequired fires before any disk write, failed extractions clean up.
+- **Security invariants** (ADR-012 — do not relax any of these without a
+  superseding ADR): zip-slip guard in `Unpacker.sanitize`; symlinks skipped
+  both directions; passwords via prompt only (never argv); passwordRequired
+  and the space-budget check fire before any disk write; failed extractions
+  clean up only what they created; per-entry output is bounded by the
+  declared size (fail-fast); overlapping/past-EOF entry ranges are rejected
+  at open; `com.apple.quarantine` propagates to extracted items; duplicate
+  names are uniquified, never overwritten.
+- **Hostile fixtures live in `scripts/gen-hostile-fixtures.py`** — bombs,
+  overlap, duplicates, truncation. Our own writer cannot produce these
+  structures, which is the point: they are built from the format spec.
 - **Defaults are modern** (UTF-8+NFC, AES-256); CP932 / ZipCrypto stay
   opt-in flags with warnings.
 - `make build`, never bare `swift build` outputs into the repo root.

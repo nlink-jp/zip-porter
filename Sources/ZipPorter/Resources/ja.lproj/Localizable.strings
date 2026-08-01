@@ -47,3 +47,17 @@
 "Reveal extracted items in Finder" = "展開された項目を Finder に表示";
 "Move the archive to the Trash" = "アーカイブファイルをゴミ箱に入れる";
 "Creating" = "作成";
+"This name cannot be stored as CP932:" = "この名前は CP932 で保存できません:";
+"An entry expands far beyond the size the archive declares — it may be a decompression bomb." = "アーカイブが宣言したサイズを大きく超えて展開されるエントリがあります — 解凍爆弾の可能性があります。";
+"The archive's entries share overlapping data — it is malformed or a decompression bomb." = "エントリのデータ範囲が重複しています — 不正なアーカイブ、または解凍爆弾です。";
+"The archive is damaged or was tampered with." = "アーカイブが破損しているか、改ざんされています。";
+"This file is not a ZIP archive." = "このファイルは ZIP アーカイブではありません。";
+"Not enough free space to extract this archive." = "このアーカイブを展開する空き容量が足りません。";
+"Needed:" = "必要:";
+"Available:" = "空き:";
+"The archive contains nothing that can be extracted." = "このアーカイブには展開できる内容がありません。";
+"The destination is not a folder." = "展開先がフォルダではありません。";
+"Skipped entries with unsafe paths:" = "安全でないパスのエントリをスキップしました:";
+"Skipped symbolic links:" = "シンボリックリンクをスキップしました:";
+"Duplicate names were extracted under new names:" = "重複する名前は別名で展開しました:";
+"Extracted with changes" = "一部を変更して展開しました";
