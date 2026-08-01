@@ -41,9 +41,10 @@ Launch ZipPorter and drop things on the window:
 - **Drop a `.zip`** (or double-click one — ZipPorter registers as a ZIP
   handler) → it is extracted. Encrypted archives prompt for the password
 - Both operations show a status dialog with a byte-accurate progress bar
-  while they run, then report what they did (files and folders, plus
-  anything skipped or renamed). A ZIP being created exists as
-  `name.zip.part` until it is complete. An
+  while they run. A clean finish is announced as a Notification Center
+  banner (no OK button); the result dialog appears only when something
+  needs reading — skipped unsafe paths, renamed duplicates, and the like.
+  A ZIP being created exists as `name.zip.part` until it is complete. An
   archive opened by double-click shows only that dialog — no droplet
   window — and quits the app once you dismiss it; dropping onto the window
   leaves it open for the next file

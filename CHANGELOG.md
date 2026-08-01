@@ -2,6 +2,21 @@
 
 ## [Unreleased]
 
+## [v0.8.0] - 2026-08-01
+
+### Changed
+
+- **Clean completions no longer stop for an OK button.** When packing or
+  extracting finishes with nothing to report, the status dialog simply
+  goes away and the completion arrives as a Notification Center banner —
+  so reveal-in-Finder happens immediately instead of after a click, and a
+  Finder-launched run quits on its own. The result dialog still appears
+  when there is something to read: skipped unsafe paths, skipped symlinks,
+  renamed duplicates, or excluded metadata (per ADR-012 those must not be
+  silent), and errors keep their alerts
+- The first run asks for notification permission; if declined, clean
+  completions rely on the revealed Finder window as the signal
+
 ## [v0.7.0] - 2026-08-01
 
 ### Changed
@@ -203,7 +218,8 @@ instead of consuming resources or silently losing data.
   reveal in Finder, move archive to Trash
 - en/ja localization; app icon
 
-[Unreleased]: https://github.com/nlink-jp/zip-porter/compare/v0.7.0...HEAD
+[Unreleased]: https://github.com/nlink-jp/zip-porter/compare/v0.8.0...HEAD
+[v0.8.0]: https://github.com/nlink-jp/zip-porter/compare/v0.7.0...v0.8.0
 [v0.7.0]: https://github.com/nlink-jp/zip-porter/compare/v0.6.0...v0.7.0
 [v0.6.0]: https://github.com/nlink-jp/zip-porter/compare/v0.5.0...v0.6.0
 [v0.5.0]: https://github.com/nlink-jp/zip-porter/compare/v0.4.1...v0.5.0

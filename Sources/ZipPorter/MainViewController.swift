@@ -160,6 +160,7 @@ final class MainViewController: NSViewController, DropViewDelegate {
 
     private func startPack(_ urls: [URL]) {
         busy = true
+        CompletionNotifier.shared.prepare()
         let prefs = Preferences.load()
         if prefs.skipOptions && !prefs.usePassword {
             runPack(urls, cp932: prefs.cp932, zipCrypto: false, password: nil)
@@ -272,16 +273,26 @@ final class MainViewController: NSViewController, DropViewDelegate {
                         notes.append(L("Skipped symbolic links:")
                             + " \(result.skippedSymlinks.count)")
                     }
-                    sheet.finish(
-                        title: L("Archive created"),
-                        summary: result.outputURL.lastPathComponent + "\n"
-                            + Self.itemCount(files: result.fileCount,
-                                             directories: result.directoryCount),
-                        notes: notes) {
+                    let summary = result.outputURL.lastPathComponent + "\n"
+                        + Self.itemCount(files: result.fileCount,
+                                         directories: result.directoryCount)
+                    let done: @MainActor () -> Void = {
                         if Preferences.load().revealCreatedArchive {
                             NSWorkspace.shared.activateFileViewerSelecting([result.outputURL])
                         }
                         self.busy = false
+                    }
+                    if notes.isEmpty {
+                        // Clean run: no OK button to press — the sheet goes
+                        // away and the completion arrives as a banner.
+                        sheet.dismiss()
+                        CompletionNotifier.shared.notify(
+                            title: L("Archive created"),
+                            body: summary.replacingOccurrences(of: "\n", with: " — "),
+                            completion: done)
+                    } else {
+                        sheet.finish(title: L("Archive created"),
+                                     summary: summary, notes: notes, completion: done)
                     }
                 }
             } catch is CancellationError {
@@ -307,6 +318,7 @@ final class MainViewController: NSViewController, DropViewDelegate {
 
     private func startUnpackQueue(_ zips: [URL]) {
         busy = true
+        CompletionNotifier.shared.prepare()
         var queue = zips
         func next() {
             guard let zip = queue.first else {
@@ -382,14 +394,26 @@ final class MainViewController: NSViewController, DropViewDelegate {
                     progress: { forwarder.forward($0) },
                     shouldCancel: { flag.isCancelled })
                 DispatchQueue.main.async {
-                    sheet.finish(
-                        title: L("Archive extracted"),
-                        summary: result.root.lastPathComponent + "\n"
-                            + Self.itemCount(files: result.extractedFiles,
-                                             directories: result.extractedDirectories),
-                        notes: Self.extractionNotes(result)) {
+                    let summary = result.root.lastPathComponent + "\n"
+                        + Self.itemCount(files: result.extractedFiles,
+                                         directories: result.extractedDirectories)
+                    let notes = Self.extractionNotes(result)
+                    let done: @MainActor () -> Void = {
                         self.finishUnpack(zip: zip, result: result, prefs: prefs)
                         completion()
+                    }
+                    if notes.isEmpty {
+                        // Clean run: the sheet just goes away and completion
+                        // arrives as a banner — no OK button between the
+                        // user and the revealed Finder window.
+                        sheet.dismiss()
+                        CompletionNotifier.shared.notify(
+                            title: L("Archive extracted"),
+                            body: summary.replacingOccurrences(of: "\n", with: " — "),
+                            completion: done)
+                    } else {
+                        sheet.finish(title: L("Archive extracted"),
+                                     summary: summary, notes: notes, completion: done)
                     }
                 }
             } catch let error as ZipReaderError where Self.isPasswordProblem(error) {
