@@ -9,6 +9,10 @@ public enum Packer {
         public var encryption: ZipWriter.Encryption = .none
         /// Apply the junk filter (`--no-clean` turns this off).
         public var clean = true
+        /// Write to `output` exactly, replacing anything already there.
+        /// Only for a path the user just chose in a save panel and
+        /// confirmed replacing; otherwise a numbered name is used instead.
+        public var overwrite = false
         public init() {}
     }
 
@@ -103,7 +107,13 @@ public enum Packer {
         guard !items.isEmpty else { throw Failure.nothingToPack }
         items.sort { $0.archivePath < $1.archivePath }
 
-        let actualOutput = PathUtil.uniqueURL(output)
+        let actualOutput: URL
+        if options.overwrite {
+            try? fm.removeItem(at: output)
+            actualOutput = output
+        } else {
+            actualOutput = PathUtil.uniqueURL(output)
+        }
         var writerOptions = ZipWriter.Options()
         writerOptions.nameEncoding = options.nameEncoding
         writerOptions.encryption = options.encryption

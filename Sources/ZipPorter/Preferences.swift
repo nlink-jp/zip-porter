@@ -12,6 +12,10 @@ struct Preferences {
     /// without showing the options sheet.
     var skipOptions = false
     var revealCreatedArchive = true
+    /// Where a new archive is written — the creation-side mirror of the
+    /// extraction destination setting.
+    var packDestinationMode: DestinationMode = .sameFolder
+    var packFixedDestinationPath: String?
 
     // MARK: Extraction (The Unarchiver-style)
     enum DestinationMode: String {
@@ -52,6 +56,8 @@ struct Preferences {
         static let zipCrypto = "pack.zipCrypto"
         static let skipOptions = "pack.skipOptions"
         static let revealCreated = "pack.revealCreated"
+        static let packDestinationMode = "pack.destinationMode"
+        static let packFixedDestination = "pack.fixedDestination"
         static let destinationMode = "unpack.destinationMode"
         static let fixedDestination = "unpack.fixedDestination"
         static let wrapMode = "unpack.wrapMode"
@@ -69,6 +75,9 @@ struct Preferences {
         p.revealCreatedArchive = defaults.object(forKey: Key.revealCreated) == nil
             ? true
             : defaults.bool(forKey: Key.revealCreated)
+        p.packDestinationMode = (defaults.string(forKey: Key.packDestinationMode)
+            .flatMap(DestinationMode.init(rawValue:))) ?? .sameFolder
+        p.packFixedDestinationPath = defaults.string(forKey: Key.packFixedDestination)
         p.destinationMode = (defaults.string(forKey: Key.destinationMode)
             .flatMap(DestinationMode.init(rawValue:))) ?? .sameFolder
         p.fixedDestinationPath = defaults.string(forKey: Key.fixedDestination)
@@ -81,15 +90,19 @@ struct Preferences {
             : defaults.bool(forKey: Key.revealInFinder)
         p.trashArchiveAfterExtract = defaults.bool(forKey: Key.trashArchive)
         // A fixed destination that disappeared falls back to same-folder.
-        if p.destinationMode == .fixed {
-            var isDir: ObjCBool = false
-            if p.fixedDestinationPath == nil
-                || !FileManager.default.fileExists(atPath: p.fixedDestinationPath!, isDirectory: &isDir)
-                || !isDir.boolValue {
-                p.destinationMode = .sameFolder
-            }
+        if !Self.isUsableDirectory(p.fixedDestinationPath) {
+            if p.destinationMode == .fixed { p.destinationMode = .sameFolder }
+        }
+        if !Self.isUsableDirectory(p.packFixedDestinationPath) {
+            if p.packDestinationMode == .fixed { p.packDestinationMode = .sameFolder }
         }
         return p
+    }
+
+    private static func isUsableDirectory(_ path: String?) -> Bool {
+        guard let path else { return false }
+        var isDir: ObjCBool = false
+        return FileManager.default.fileExists(atPath: path, isDirectory: &isDir) && isDir.boolValue
     }
 
     func save(to defaults: UserDefaults = .standard) {
@@ -98,6 +111,8 @@ struct Preferences {
         defaults.set(zipCrypto, forKey: Key.zipCrypto)
         defaults.set(skipOptions, forKey: Key.skipOptions)
         defaults.set(revealCreatedArchive, forKey: Key.revealCreated)
+        defaults.set(packDestinationMode.rawValue, forKey: Key.packDestinationMode)
+        defaults.set(packFixedDestinationPath, forKey: Key.packFixedDestination)
         defaults.set(destinationMode.rawValue, forKey: Key.destinationMode)
         defaults.set(fixedDestinationPath, forKey: Key.fixedDestination)
         defaults.set(wrapMode.rawValue, forKey: Key.wrapMode)

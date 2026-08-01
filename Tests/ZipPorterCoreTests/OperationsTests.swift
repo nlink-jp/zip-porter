@@ -232,6 +232,24 @@ final class PackerTests: XCTestCase {
         XCTAssertEqual(try Data(contentsOf: out), Data("existing".utf8))
     }
 
+    func testOverwriteReplacesTheChosenPath() throws {
+        // The save panel already asked the user about replacing, so the
+        // numbered-name policy must step aside for that one path.
+        _ = try write("d/a.txt", "A")
+        let out = workDir.appendingPathComponent("out.zip")
+        try Data("existing".utf8).write(to: out)
+        var options = Packer.Options()
+        options.overwrite = true
+        let result = try Packer.pack(
+            inputs: [workDir.appendingPathComponent("d")], output: out, options: options)
+        XCTAssertEqual(result.outputURL, out)
+        XCTAssertNotEqual(try Data(contentsOf: out), Data("existing".utf8))
+        XCTAssertFalse(FileManager.default.fileExists(
+            atPath: workDir.appendingPathComponent("out 2.zip").path))
+        let reader = try ZipReader(url: out)
+        XCTAssertEqual(reader.entries.map { reader.name(of: $0) }.sorted(), ["d/", "d/a.txt"])
+    }
+
     func testMultipleInputsLandAtRoot() throws {
         let a = try write("x/a.txt", "A")
         let b = try write("y/b.txt", "B")

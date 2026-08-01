@@ -50,8 +50,9 @@ Launch ZipPorter and drop things on the window:
   destination (same folder / ask every time / a fixed folder), when to
   create a wrapper folder (never / only for multiple top-level items /
   always), the created folder's modification date, reveal-in-Finder, and
-  move-archive-to-Trash — plus, for creating, whether to show the options
-  sheet and whether to reveal the new archive in Finder
+  move-archive-to-Trash. Creating has the same destination choice (next to
+  the originals / a fixed folder / ask every time), plus whether to show
+  the options sheet and whether to reveal the new archive in Finder
 
 ## CLI
 

@@ -150,6 +150,41 @@ final class MainViewController: NSViewController, DropViewDelegate {
         }
     }
 
+    /// Where the new archive goes, mirroring the extraction destination
+    /// setting: next to the originals, into a fixed folder, or wherever the
+    /// user says in a save panel. `overwrite` is true only for that last
+    /// case, where the panel already asked about replacing a file.
+    private func resolvePackOutput(for inputs: [URL],
+                                   completion: @escaping (_ output: URL?, _ overwrite: Bool) -> Void) {
+        let prefs = Preferences.load()
+        let suggested = defaultPackOutput(for: inputs)
+        switch prefs.packDestinationMode {
+        case .sameFolder:
+            completion(suggested, false)
+        case .fixed:
+            guard let path = prefs.packFixedDestinationPath else {
+                completion(suggested, false)
+                return
+            }
+            completion(URL(fileURLWithPath: path)
+                .appendingPathComponent(suggested.lastPathComponent), false)
+        case .ask:
+            let panel = NSSavePanel()
+            panel.nameFieldStringValue = suggested.lastPathComponent
+            panel.directoryURL = suggested.deletingLastPathComponent()
+            panel.canCreateDirectories = true
+            if #available(macOS 11.0, *) { panel.allowedContentTypes = [.zip] }
+            guard let hostWindow else {
+                let response = panel.runModal()
+                completion(response == .OK ? panel.url : nil, true)
+                return
+            }
+            panel.beginSheetModal(for: hostWindow) { response in
+                completion(response == .OK ? panel.url : nil, true)
+            }
+        }
+    }
+
     private func defaultPackOutput(for inputs: [URL]) -> URL {
         if inputs.count == 1 {
             let single = inputs[0]
@@ -163,12 +198,25 @@ final class MainViewController: NSViewController, DropViewDelegate {
     }
 
     private func runPack(_ urls: [URL], cp932: Bool, zipCrypto: Bool, password: String?) {
+        resolvePackOutput(for: urls) { [weak self] output, overwrite in
+            guard let self else { return }
+            guard let output else {
+                self.busy = false
+                return
+            }
+            self.runPack(urls, output: output, overwrite: overwrite,
+                         cp932: cp932, zipCrypto: zipCrypto, password: password)
+        }
+    }
+
+    private func runPack(_ urls: [URL], output: URL, overwrite: Bool,
+                         cp932: Bool, zipCrypto: Bool, password: String?) {
         var options = Packer.Options()
         options.nameEncoding = cp932 ? .cp932 : .utf8
+        options.overwrite = overwrite
         if let password {
             options.encryption = zipCrypto ? .zipCrypto(password: password) : .aes256(password: password)
         }
-        let output = defaultPackOutput(for: urls)
         let sheet = OperationSheet(title: L("Packing…"))
         sheet.begin(on: hostWindow)
         let flag = sheet.flag

@@ -66,3 +66,5 @@
 "Archive extracted" = "Archive extracted";
 "%1$d files, %2$d folders" = "%1$d files, %2$d folders";
 "Excluded macOS metadata files:" = "Excluded macOS metadata files:";
+"Create in:" = "Create in:";
+"Same folder as the original items" = "Same folder as the original items";

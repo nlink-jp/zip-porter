@@ -2,6 +2,17 @@
 
 ## [Unreleased]
 
+## [v0.4.0] - 2026-08-01
+
+### Added
+
+- **The creation side gets the same destination choice as extraction** —
+  Settings › Creating › "Create in:" offers the same folder as the original
+  items (the previous behavior), a fixed folder, or asking every time via a
+  save panel where the name can be changed too. When a path is chosen in
+  that panel, replacing an existing archive is honored instead of falling
+  back to a numbered name
+
 ## [v0.3.1] - 2026-08-01
 
 ### Changed
@@ -125,7 +136,8 @@ instead of consuming resources or silently losing data.
   reveal in Finder, move archive to Trash
 - en/ja localization; app icon
 
-[Unreleased]: https://github.com/nlink-jp/zip-porter/compare/v0.3.1...HEAD
+[Unreleased]: https://github.com/nlink-jp/zip-porter/compare/v0.4.0...HEAD
+[v0.4.0]: https://github.com/nlink-jp/zip-porter/compare/v0.3.1...v0.4.0
 [v0.3.1]: https://github.com/nlink-jp/zip-porter/compare/v0.3.0...v0.3.1
 [v0.3.0]: https://github.com/nlink-jp/zip-porter/compare/v0.2.2...v0.3.0
 [v0.2.2]: https://github.com/nlink-jp/zip-porter/compare/v0.2.1...v0.2.2

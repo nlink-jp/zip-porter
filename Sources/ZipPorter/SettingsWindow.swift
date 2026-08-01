@@ -7,7 +7,20 @@ import AppKit
 final class SettingsWindowController: NSWindowController {
     static let shared = SettingsWindowController()
 
-    private let destinationPopup = NSPopUpButton()
+    private lazy var destinationPopup = DestinationPopup(
+        sameFolderTitle: L("Same folder as the archive")) { mode, path in
+        var prefs = Preferences.load()
+        prefs.destinationMode = mode
+        prefs.fixedDestinationPath = path
+        prefs.save()
+    }
+    private lazy var packDestinationPopup = DestinationPopup(
+        sameFolderTitle: L("Same folder as the original items")) { mode, path in
+        var prefs = Preferences.load()
+        prefs.packDestinationMode = mode
+        prefs.packFixedDestinationPath = path
+        prefs.save()
+    }
     private var wrapRadios: [Preferences.WrapMode: NSButton] = [:]
     private var dateRadios: [Preferences.FolderDateMode: NSButton] = [:]
     private let revealCheck = NSButton(checkboxWithTitle: L("Reveal extracted items in Finder"), target: nil, action: nil)
@@ -47,9 +60,6 @@ final class SettingsWindowController: NSWindowController {
     }
 
     private func buildUI() {
-        destinationPopup.target = self
-        destinationPopup.action = #selector(destinationChanged)
-
         func radio(_ title: String) -> NSButton {
             NSButton(radioButtonWithTitle: title, target: self, action: #selector(radioChanged))
         }
@@ -67,10 +77,14 @@ final class SettingsWindowController: NSWindowController {
             check.action = #selector(checkboxChanged)
         }
 
-        let destRow = NSStackView(views: [NSTextField(labelWithString: L("Extract to:")), destinationPopup])
-        destRow.orientation = .horizontal
-        destRow.spacing = 8
-        destinationPopup.setContentHuggingPriority(.defaultLow, for: .horizontal)
+        func destinationRow(_ title: String, _ chooser: DestinationPopup) -> NSStackView {
+            let row = NSStackView(views: [NSTextField(labelWithString: title), chooser.popup])
+            row.orientation = .horizontal
+            row.spacing = 8
+            return row
+        }
+        let destRow = destinationRow(L("Extract to:"), destinationPopup)
+        let packDestRow = destinationRow(L("Create in:"), packDestinationPopup)
 
         // Radio buttons group by shared superview+action; one stack each.
         let wrapStack = NSStackView(views: [
@@ -108,7 +122,7 @@ final class SettingsWindowController: NSWindowController {
         creatingChecks.orientation = .vertical
         creatingChecks.alignment = .leading
         creatingChecks.spacing = 8
-        let creating = NSStackView(views: [creatingChecks])
+        let creating = NSStackView(views: [packDestRow, creatingChecks])
         for stack in [extraction, creating] {
             stack.orientation = .vertical
             stack.alignment = .leading
@@ -146,28 +160,11 @@ final class SettingsWindowController: NSWindowController {
         window?.setContentSize(container.fittingSize)
     }
 
-    private func rebuildDestinationItems(_ prefs: Preferences) {
-        destinationPopup.removeAllItems()
-        if prefs.destinationMode == .fixed, let path = prefs.fixedDestinationPath {
-            destinationPopup.addItem(withTitle: FileManager.default.displayName(atPath: path))
-            destinationPopup.menu?.addItem(.separator())
-        }
-        destinationPopup.addItem(withTitle: L("Same folder as the archive"))
-        destinationPopup.addItem(withTitle: L("Ask every time"))
-        destinationPopup.menu?.addItem(.separator())
-        destinationPopup.addItem(withTitle: L("Choose folder…"))
-        switch prefs.destinationMode {
-        case .fixed: destinationPopup.selectItem(at: 0)
-        case .sameFolder:
-            destinationPopup.selectItem(withTitle: L("Same folder as the archive"))
-        case .ask:
-            destinationPopup.selectItem(withTitle: L("Ask every time"))
-        }
-    }
-
     private func loadState() {
         let prefs = Preferences.load()
-        rebuildDestinationItems(prefs)
+        destinationPopup.load(mode: prefs.destinationMode, fixedPath: prefs.fixedDestinationPath)
+        packDestinationPopup.load(mode: prefs.packDestinationMode,
+                                  fixedPath: prefs.packFixedDestinationPath)
         for (mode, button) in wrapRadios { button.state = prefs.wrapMode == mode ? .on : .off }
         for (mode, button) in dateRadios { button.state = prefs.folderDate == mode ? .on : .off }
         revealCheck.state = prefs.revealInFinder ? .on : .off
@@ -177,30 +174,6 @@ final class SettingsWindowController: NSWindowController {
     }
 
     // MARK: - Actions
-
-    @objc private func destinationChanged() {
-        var prefs = Preferences.load()
-        let title = destinationPopup.titleOfSelectedItem ?? ""
-        switch title {
-        case L("Same folder as the archive"):
-            prefs.destinationMode = .sameFolder
-        case L("Ask every time"):
-            prefs.destinationMode = .ask
-        case L("Choose folder…"):
-            let panel = NSOpenPanel()
-            panel.canChooseFiles = false
-            panel.canChooseDirectories = true
-            panel.canCreateDirectories = true
-            if panel.runModal() == .OK, let url = panel.url {
-                prefs.destinationMode = .fixed
-                prefs.fixedDestinationPath = url.path
-            }
-        default:
-            prefs.destinationMode = .fixed
-        }
-        prefs.save()
-        rebuildDestinationItems(prefs)
-    }
 
     @objc private func radioChanged(_ sender: NSButton) {
         var prefs = Preferences.load()

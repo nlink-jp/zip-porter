@@ -66,3 +66,5 @@
 "Archive extracted" = "アーカイブを展開しました";
 "%1$d files, %2$d folders" = "%1$d ファイル・%2$d フォルダ";
 "Excluded macOS metadata files:" = "macOS の不要ファイルを除外しました:";
+"Create in:" = "アーカイブの作成先:";
+"Same folder as the original items" = "元の項目と同じフォルダ";
