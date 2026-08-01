@@ -17,8 +17,9 @@ app that works fully offline:
   Japanese Windows tools; `--zipcrypto` produces archives Windows Explorer
   can open standalone (with a weakness warning)
 
-> **Status: scaffold.** The engine (Phase 1) is in development. See the
-> [RFP](docs/en/zip-porter-rfp.md) for the full specification and plan.
+> **Status: engine + CLI complete (RFP Phase 1).** The drag-&-drop GUI
+> (Phase 2) is in development. See the [RFP](docs/en/zip-porter-rfp.md) for
+> the full specification and plan.
 
 ## Usage
 
@@ -31,10 +32,41 @@ zip-porter inspect <input.zip>
 zip-porter --version
 ```
 
-Run with no command to launch the GUI (drop files to pack, drop a `.zip` to
-unpack).
+Run with no command to launch the GUI (a placeholder window until Phase 2).
 
-`pack`, `unpack`, and `inspect` are not implemented yet.
+### pack
+
+- Excludes macOS junk (`.DS_Store`, `__MACOSX/`, AppleDouble `._*`,
+  Finder `Icon\r`, Spotlight/fseventsd/Trashes) — disable with `--no-clean`
+- File names are NFC-normalized UTF-8 with the UTF-8 flag; `--cp932` stores
+  CP932 names instead (names CP932 cannot represent are an error)
+- `--password` prompts interactively (passwords never appear in argv) and
+  encrypts with AES-256 (WinZip AE-2); `--zipcrypto` selects the weaker
+  Explorer-compatible cipher, with a warning
+- Already-compressed extensions (jpg, png, mp4, zip, …) are stored, the
+  rest deflated; symlinks are skipped
+- An existing output name is never overwritten — "name 2.zip" is used
+
+### unpack
+
+- Name encoding auto-detection: the UTF-8 flag wins; unflagged names are
+  validated as UTF-8 first and treated as CP932 otherwise. Override with
+  `--encoding utf8|cp932`
+- Extracts ZipCrypto and AES-128/192/256 (AE-1/AE-2) archives; prompts for
+  a password on demand
+- A single top-level item extracts as itself; anything else is wrapped in
+  a folder named after the archive. Existing files are never overwritten
+  ("name 2")
+- zip-slip protection: absolute paths, `..`, drive letters, and NTFS ADS
+  names are skipped (reported as warnings); symlink entries are skipped
+- Extracts to the archive's own folder by default, or `-o <dir>`
+  (created if missing, like `unzip -d`)
+
+### inspect
+
+Prints each entry's size, method, encryption, and UTF-8-flag state, plus
+the archive-wide detected name encoding and any macOS junk entries —
+useful for diagnosing mojibake before extracting.
 
 ## Requirements
 

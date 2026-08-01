@@ -4,12 +4,23 @@
 
 ### Added
 
-- Project scaffold: SPM two-target layout (`ZipPorterCore` UI-independent
-  engine + `ZipPorter` AppKit app with single-binary CLI routing)
-- CLI skeleton: `--version` answers on stdout without launching the UI;
-  `pack` / `unpack` / `inspect` are routed but not yet implemented
-- Engine seed: junk-file filter (`.DS_Store`, `__MACOSX/`, AppleDouble,
-  Finder `Icon\r`, Spotlight/fsevents/Trashes) and file-name transforms
-  (NFC normalization, CP932 encode/decode) with tests
-- RFP (design of record): `docs/ja/zip-porter-rfp.ja.md` /
-  `docs/en/zip-porter-rfp.md`
+- **Engine (RFP Phase 1)**: ZIP reader/writer in `ZipPorterCore`
+  - Central-directory parsing (ZIP64-aware), streaming extraction with CRC
+    verification; streaming creation with local-header patch-back
+  - File-name encoding: NFC-normalized UTF-8 (flagged) or CP932 on pack;
+    auto-detection on unpack (UTF-8 flag > UTF-8 validation > CP932)
+  - Encryption: ZipCrypto and WinZip AES (AE-1/AE-2) decrypt; ZipCrypto and
+    AES-256 (AE-2) encrypt — cross-verified against Info-ZIP, Apple ditto,
+    7-Zip, and a spec-derived CP932 generator
+  - Junk filter (`.DS_Store`, `__MACOSX/`, AppleDouble, `Icon\r`, …)
+- **CLI**: `pack` / `unpack` / `inspect` fully implemented
+  - pack: junk filtering (`--no-clean`), `--cp932`, `--password` (interactive
+    prompt, AES-256 default), `--zipcrypto` with weakness warning, store for
+    compressed extensions, unique output names
+  - unpack: encoding auto-detect with `--encoding` override, zip-slip guard,
+    symlink skip, single-item vs wrapper-folder policy, "name 2" collisions,
+    prompt-on-demand password, mtime/permission restore
+  - inspect: per-entry method/encryption/flag table, archive encoding
+    verdict, junk contamination report
+- Project scaffold: SPM two-target layout, single-binary CLI routing,
+  signed .app assembly, RFP (design of record)

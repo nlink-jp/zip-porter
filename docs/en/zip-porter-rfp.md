@@ -57,9 +57,12 @@ zip-porter --version
 **unpack** — default behavior:
 
 - Automatic file-name-encoding detection: bit 11 → definitively UTF-8. Without
-  the flag, try CP932 decoding first, falling back to UTF-8 validation on
-  failure (ASCII-only names are compatible either way). Force with
-  `--encoding`
+  the flag, **UTF-8 validation runs first**; only invalid-UTF-8 names are
+  treated as CP932 (ASCII-only names are compatible either way). Force with
+  `--encoding`. Note: the original draft said CP932-first, but UTF-8 Japanese
+  bytes usually "decode successfully" as CP932 (as mojibake) while CP932
+  Japanese is almost never valid UTF-8 — so UTF-8-first is the correct order
+  (corrected during implementation)
 - Extracts both ZipCrypto and AES-128/192/256 (AE-1/AE-2). Passwords are read
   via an interactive prompt (no terminal echo)
 - Destination: alongside the ZIP. If the archive has multiple top-level
