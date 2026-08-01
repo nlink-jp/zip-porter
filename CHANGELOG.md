@@ -2,6 +2,17 @@
 
 ## [Unreleased]
 
+## [v0.8.1] - 2026-08-01
+
+### Fixed
+
+- **The completion notification never appeared in v0.8.0.** Authorization
+  was requested asynchronously at operation start and read from a cached
+  flag at the end, so any operation that finished before the callback
+  landed — which is most of them — silently skipped its banner.
+  Authorization is now resolved inside the notification chain, and the
+  post is given a moment to display before a Finder-launched run quits
+
 ## [v0.8.0] - 2026-08-01
 
 ### Changed
@@ -218,7 +229,8 @@ instead of consuming resources or silently losing data.
   reveal in Finder, move archive to Trash
 - en/ja localization; app icon
 
-[Unreleased]: https://github.com/nlink-jp/zip-porter/compare/v0.8.0...HEAD
+[Unreleased]: https://github.com/nlink-jp/zip-porter/compare/v0.8.1...HEAD
+[v0.8.1]: https://github.com/nlink-jp/zip-porter/compare/v0.8.0...v0.8.1
 [v0.8.0]: https://github.com/nlink-jp/zip-porter/compare/v0.7.0...v0.8.0
 [v0.7.0]: https://github.com/nlink-jp/zip-porter/compare/v0.6.0...v0.7.0
 [v0.6.0]: https://github.com/nlink-jp/zip-porter/compare/v0.5.0...v0.6.0

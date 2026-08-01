@@ -148,6 +148,11 @@ docs/{en,ja}/               RFP (design of record)
   goes through `DialogPresenter`, which falls back to a standalone window.
   Keep `hostWindow` guarded by `isViewLoaded` — touching `view` would build
   the droplet UI the mode exists to avoid.
+- **Never gate a notification on a cached authorization flag.**
+  `requestAuthorization` is async; an operation that finishes first then
+  skips its banner silently (this shipped in v0.8.0). Resolve
+  authorization inside the posting chain, and let the post settle before a
+  one-shot launch terminates — the banner survives the quit once shown.
 - Dialogs that hold fixed-width fields need the container-plus-explicit-
   width treatment too (the password field was being squeezed against the
   right edge). Inside them use `alignment = .leading` plus width

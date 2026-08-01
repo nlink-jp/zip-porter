@@ -8,36 +8,49 @@ import UserNotifications
 @MainActor
 final class CompletionNotifier: NSObject, UNUserNotificationCenterDelegate {
     static let shared = CompletionNotifier()
-    private var available = false
 
-    /// Call once an operation starts, so authorization is settled by the
-    /// time the completion fires. Safe to call repeatedly.
+    /// Wire the delegate early (banners while frontmost need it). Safe to
+    /// call repeatedly.
     func prepare() {
         // UNUserNotificationCenter traps in unbundled processes (swift run).
         guard Bundle.main.bundleIdentifier != nil else { return }
-        let center = UNUserNotificationCenter.current()
-        center.delegate = self
-        center.requestAuthorization(options: [.alert]) { [weak self] granted, _ in
-            DispatchQueue.main.async { self?.available = granted }
-        }
+        UNUserNotificationCenter.current().delegate = self
     }
 
-    /// Post the completion banner, then run `completion` once the request
-    /// has been handed to the system (so a one-shot launch can quit without
-    /// losing the notification).
+    /// Post the completion banner, then run `completion`.
+    ///
+    /// Authorization is resolved HERE, inside the chain — not from a cached
+    /// flag. A cached flag races the operation: a fast extraction finished
+    /// before the async authorization callback landed, so the banner was
+    /// skipped, and the one-shot quit then tore down the first-run
+    /// permission prompt before the user could answer it. Resolving in the
+    /// chain means a first run waits for the prompt's answer, and every
+    /// later run gets the settled state immediately.
     func notify(title: String, body: String, completion: @escaping @MainActor () -> Void) {
-        guard available, Bundle.main.bundleIdentifier != nil else {
+        guard Bundle.main.bundleIdentifier != nil else {
             completion()
             return
         }
-        let content = UNMutableNotificationContent()
-        content.title = title
-        content.body = body
-        let request = UNNotificationRequest(
-            identifier: UUID().uuidString, content: content, trigger: nil)
-        UNUserNotificationCenter.current().add(request) { _ in
-            DispatchQueue.main.async {
-                MainActor.assumeIsolated { completion() }
+        let center = UNUserNotificationCenter.current()
+        center.delegate = self
+        center.requestAuthorization(options: [.alert, .sound]) { granted, _ in
+            guard granted else {
+                DispatchQueue.main.async {
+                    MainActor.assumeIsolated { completion() }
+                }
+                return
+            }
+            let content = UNMutableNotificationContent()
+            content.title = title
+            content.body = body
+            let request = UNNotificationRequest(
+                identifier: UUID().uuidString, content: content, trigger: nil)
+            center.add(request) { _ in
+                // Give the banner a beat to materialize before a one-shot
+                // launch terminates the app; it survives the quit once shown.
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                    MainActor.assumeIsolated { completion() }
+                }
             }
         }
     }
@@ -48,6 +61,6 @@ final class CompletionNotifier: NSObject, UNUserNotificationCenterDelegate {
         _ center: UNUserNotificationCenter,
         willPresent notification: UNNotification,
         withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void) {
-        completionHandler([.banner])
+        completionHandler([.banner, .list])
     }
 }
