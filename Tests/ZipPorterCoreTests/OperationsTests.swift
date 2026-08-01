@@ -84,6 +84,36 @@ final class UnpackerTests: XCTestCase {
         XCTAssertEqual(try String(contentsOf: result.root.appendingPathComponent("ok.txt"), encoding: .utf8), "ok")
     }
 
+    func testFolderPolicyAlwaysWrapsSingleItem() throws {
+        let zip = try makeZip(name: "単体.zip") { w in
+            try w.addFile("docs/a.txt", data: Data("A".utf8))
+        }
+        var options = Unpacker.Options()
+        options.folderPolicy = .always
+        let result = try Unpacker.unpack(zipURL: zip, options: options)
+        XCTAssertTrue(result.createdWrapper)
+        XCTAssertEqual(result.root.lastPathComponent, "単体")
+        XCTAssertEqual(try String(contentsOf: result.root.appendingPathComponent("docs/a.txt"), encoding: .utf8), "A")
+    }
+
+    func testFolderPolicyNeverExtractsMultipleAtDestination() throws {
+        // "b.txt" already exists at the destination — only that top item is
+        // renamed; nothing existing is touched, and cleanup of a later
+        // failure must never remove the destination itself.
+        try Data("existing".utf8).write(to: workDir.appendingPathComponent("b.txt"))
+        let zip = try makeZip { w in
+            try w.addFile("a.txt", data: Data("A".utf8))
+            try w.addFile("b.txt", data: Data("B".utf8))
+        }
+        var options = Unpacker.Options()
+        options.folderPolicy = .never
+        let result = try Unpacker.unpack(zipURL: zip, options: options)
+        XCTAssertFalse(result.createdWrapper)
+        XCTAssertEqual(Set(result.extractedTopItems.map(\.lastPathComponent)), ["a.txt", "b 2.txt"])
+        XCTAssertEqual(try String(contentsOf: workDir.appendingPathComponent("b.txt"), encoding: .utf8), "existing")
+        XCTAssertEqual(try String(contentsOf: workDir.appendingPathComponent("b 2.txt"), encoding: .utf8), "B")
+    }
+
     func testEncryptedUnpackWithPassword() throws {
         var opts = ZipWriter.Options()
         opts.encryption = .aes256(password: "pw")

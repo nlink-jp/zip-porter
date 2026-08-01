@@ -46,7 +46,6 @@ enum ZipPorterMain {
         Self.delegate = delegate
         app.delegate = delegate
         app.setActivationPolicy(.regular)
-        app.mainMenu = MainMenu.build()
         app.run()
     }
 }
@@ -54,40 +53,45 @@ enum ZipPorterMain {
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private var window: NSWindow?
+    private let mainViewController = MainViewController()
+
+    func applicationWillFinishLaunching(_ notification: Notification) {
+        // The menu must exist before launch finishes so Finder-open events
+        // land in a fully wired app.
+        NSApp.mainMenu = MainMenu.build()
+    }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
-        window = makeMainWindow()
-        window?.makeKeyAndOrderFront(nil)
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 460, height: 320),
+            styleMask: [.titled, .closable, .miniaturizable],
+            backing: .buffered,
+            defer: false)
+        window.title = "ZipPorter"
+        window.contentViewController = mainViewController
+        window.setContentSize(NSSize(width: 460, height: 320))
+        window.center()
+        self.window = window
+        window.makeKeyAndOrderFront(nil)
         NSApp.activate()
+    }
+
+    /// Finder integration: double-clicked .zip files (LSHandlerRank Default)
+    /// and items dropped on the Dock icon arrive here.
+    func application(_ application: NSApplication, open urls: [URL]) {
+        mainViewController.handle(urls)
+    }
+
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        if !flag { window?.makeKeyAndOrderFront(nil) }
+        return true
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
         true
     }
 
-    /// Scaffold window: drop zone arrives in the GUI phase. The version is
-    /// always visible in the UI (org rule: GUI must show its version).
-    private func makeMainWindow() -> NSWindow {
-        let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 420, height: 280),
-            styleMask: [.titled, .closable, .miniaturizable],
-            backing: .buffered,
-            defer: false)
-        window.title = "ZipPorter"
-        window.center()
-
-        let label = NSTextField(labelWithString: "zip-porter \(AppInfo.version)")
-        label.font = .systemFont(ofSize: 16, weight: .medium)
-        label.alignment = .center
-        label.translatesAutoresizingMaskIntoConstraints = false
-
-        let content = NSView()
-        content.addSubview(label)
-        NSLayoutConstraint.activate([
-            label.centerXAnchor.constraint(equalTo: content.centerXAnchor),
-            label.centerYAnchor.constraint(equalTo: content.centerYAnchor),
-        ])
-        window.contentView = content
-        return window
+    @objc func showSettings(_ sender: Any?) {
+        SettingsWindowController.shared.show()
     }
 }

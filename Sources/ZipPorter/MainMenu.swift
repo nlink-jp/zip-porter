@@ -1,6 +1,6 @@
 import AppKit
 
-/// Minimal main menu for the scaffold; the full menu ships with the GUI phase.
+/// Main menu: app menu (About / Settings / Hide / Quit) and Window.
 @MainActor
 enum MainMenu {
     static func build() -> NSMenu {
@@ -11,26 +11,31 @@ enum MainMenu {
         let appMenu = NSMenu()
         appItem.submenu = appMenu
         appMenu.addItem(
-            withTitle: "About ZipPorter",
+            withTitle: L("About ZipPorter"),
             action: #selector(NSApplication.orderFrontStandardAboutPanel(_:)),
             keyEquivalent: "")
         appMenu.addItem(.separator())
         appMenu.addItem(
-            withTitle: "Hide ZipPorter",
+            withTitle: L("Settings…"),
+            action: #selector(AppDelegate.showSettings(_:)),
+            keyEquivalent: ",")
+        appMenu.addItem(.separator())
+        appMenu.addItem(
+            withTitle: L("Hide ZipPorter"),
             action: #selector(NSApplication.hide(_:)),
             keyEquivalent: "h")
         appMenu.addItem(.separator())
         appMenu.addItem(
-            withTitle: "Quit ZipPorter",
+            withTitle: L("Quit ZipPorter"),
             action: #selector(NSApplication.terminate(_:)),
             keyEquivalent: "q")
 
         let windowItem = NSMenuItem()
         main.addItem(windowItem)
-        let windowMenu = NSMenu(title: "Window")
+        let windowMenu = NSMenu(title: L("Window"))
         windowItem.submenu = windowMenu
         windowMenu.addItem(
-            withTitle: "Minimize",
+            withTitle: L("Minimize"),
             action: #selector(NSWindow.performMiniaturize(_:)),
             keyEquivalent: "m")
         NSApp.windowsMenu = windowMenu

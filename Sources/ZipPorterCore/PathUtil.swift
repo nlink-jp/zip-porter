@@ -1,22 +1,28 @@
 import Foundation
 
 public enum PathUtil {
-    /// Return `url` if nothing exists there, else "name 2", "name 3", …
-    /// (Archive Utility's collision style). The numbered suffix goes before
-    /// the extension: "report.zip" → "report 2.zip".
-    public static func uniqueURL(_ url: URL) -> URL {
-        let fm = FileManager.default
-        guard fm.fileExists(atPath: url.path) else { return url }
-        let ext = url.pathExtension
-        let stem = url.deletingPathExtension().lastPathComponent
-        let dir = url.deletingLastPathComponent()
+    /// "name" → "name 2", "name 3", … with the number before the extension
+    /// ("report.zip" → "report 2.zip") — Archive Utility's collision style.
+    public static func numberedVariant(_ name: String, _ n: Int) -> String {
+        let ext = (name as NSString).pathExtension
+        let stem = (name as NSString).deletingPathExtension
+        return ext.isEmpty ? "\(stem) \(n)" : "\(stem) \(n).\(ext)"
+    }
+
+    /// First name (starting from `name` itself) for which `isTaken` is false.
+    public static func uniqueName(_ name: String, isTaken: (String) -> Bool) -> String {
+        guard isTaken(name) else { return name }
         var n = 2
-        while true {
-            let candidate = ext.isEmpty
-                ? dir.appendingPathComponent("\(stem) \(n)")
-                : dir.appendingPathComponent("\(stem) \(n)").appendingPathExtension(ext)
-            if !fm.fileExists(atPath: candidate.path) { return candidate }
-            n += 1
+        while isTaken(numberedVariant(name, n)) { n += 1 }
+        return numberedVariant(name, n)
+    }
+
+    /// Return `url` if nothing exists there, else the numbered variant.
+    public static func uniqueURL(_ url: URL) -> URL {
+        let dir = url.deletingLastPathComponent()
+        let name = uniqueName(url.lastPathComponent) {
+            FileManager.default.fileExists(atPath: dir.appendingPathComponent($0).path)
         }
+        return dir.appendingPathComponent(name)
     }
 }

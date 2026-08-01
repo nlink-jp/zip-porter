@@ -15,7 +15,8 @@ let package = Package(
         .executableTarget(
             name: "ZipPorter",
             dependencies: ["ZipPorterCore"],
-            path: "Sources/ZipPorter"
+            path: "Sources/ZipPorter",
+            resources: [.process("Resources")]
         ),
         .testTarget(
             name: "ZipPorterCoreTests",

@@ -1,0 +1,320 @@
+import AppKit
+import ZipPorterCore
+
+/// The drop window's content and the pack/unpack flows.
+@MainActor
+final class MainViewController: NSViewController, DropViewDelegate {
+    private let dropView = DropView()
+    private var busy = false
+
+    override func loadView() {
+        let root = NSView(frame: NSRect(x: 0, y: 0, width: 460, height: 320))
+        dropView.delegate = self
+        dropView.translatesAutoresizingMaskIntoConstraints = false
+        root.addSubview(dropView)
+
+        let icon = NSImageView()
+        icon.image = NSImage(systemSymbolName: "doc.zipper", accessibilityDescription: nil)
+            ?? NSImage(systemSymbolName: "arrow.down.doc", accessibilityDescription: nil)
+        icon.symbolConfiguration = .init(pointSize: 44, weight: .light)
+        icon.contentTintColor = .tertiaryLabelColor
+        let title = NSTextField(labelWithString: L("Drop files or folders to create a ZIP"))
+        title.font = .systemFont(ofSize: 15, weight: .medium)
+        let subtitle = NSTextField(labelWithString: L("Drop a ZIP here to extract it"))
+        subtitle.font = .systemFont(ofSize: 13)
+        subtitle.textColor = .secondaryLabelColor
+        let hints = NSStackView(views: [icon, title, subtitle])
+        hints.orientation = .vertical
+        hints.alignment = .centerX
+        hints.spacing = 8
+        hints.translatesAutoresizingMaskIntoConstraints = false
+        dropView.addSubview(hints)
+
+        // Org rule: the GUI always shows its version.
+        let version = NSTextField(labelWithString: "zip-porter \(AppInfo.version)")
+        version.font = .systemFont(ofSize: NSFont.smallSystemFontSize)
+        version.textColor = .tertiaryLabelColor
+        version.translatesAutoresizingMaskIntoConstraints = false
+        root.addSubview(version)
+
+        NSLayoutConstraint.activate([
+            dropView.topAnchor.constraint(equalTo: root.topAnchor),
+            dropView.leadingAnchor.constraint(equalTo: root.leadingAnchor),
+            dropView.trailingAnchor.constraint(equalTo: root.trailingAnchor),
+            dropView.bottomAnchor.constraint(equalTo: root.bottomAnchor, constant: -24),
+            hints.centerXAnchor.constraint(equalTo: dropView.centerXAnchor),
+            hints.centerYAnchor.constraint(equalTo: dropView.centerYAnchor),
+            version.trailingAnchor.constraint(equalTo: root.trailingAnchor, constant: -30),
+            version.bottomAnchor.constraint(equalTo: root.bottomAnchor, constant: -8),
+        ])
+        view = root
+    }
+
+    private var hostWindow: NSWindow? { view.window }
+
+    // MARK: - Entry points
+
+    func dropView(_ view: DropView, didReceive urls: [URL]) {
+        handle(urls)
+    }
+
+    /// Shared entry for drops and Finder-open events. All-ZIP drops extract;
+    /// anything else packs (a mixed drop stores the ZIPs as plain files).
+    func handle(_ urls: [URL]) {
+        guard !urls.isEmpty else { return }
+        guard !busy else {
+            NSSound.beep()
+            return
+        }
+        let zips = urls.filter { $0.pathExtension.lowercased() == "zip" }
+        if zips.count == urls.count {
+            startUnpackQueue(zips)
+        } else {
+            startPack(urls)
+        }
+    }
+
+    private func showError(_ headline: String, _ detail: String) {
+        let alert = NSAlert()
+        alert.messageText = headline
+        alert.informativeText = detail
+        alert.alertStyle = .warning
+        if let hostWindow {
+            alert.beginSheetModal(for: hostWindow)
+        } else {
+            alert.runModal()
+        }
+    }
+
+    // MARK: - Pack flow
+
+    private func startPack(_ urls: [URL]) {
+        busy = true
+        let prefs = Preferences.load()
+        if prefs.skipOptions && !prefs.usePassword {
+            runPack(urls, cp932: prefs.cp932, zipCrypto: false, password: nil)
+            return
+        }
+        guard let hostWindow else {
+            busy = false
+            return
+        }
+        PackOptionsSheet(prefs: prefs).present(on: hostWindow) { [weak self] result in
+            guard let self else { return }
+            guard let result else {
+                self.busy = false
+                return
+            }
+            var newPrefs = Preferences.load()
+            newPrefs.usePassword = result.password != nil
+            newPrefs.cp932 = result.cp932
+            newPrefs.zipCrypto = result.zipCrypto
+            newPrefs.skipOptions = result.skipNext
+            newPrefs.save()
+            self.runPack(urls, cp932: result.cp932, zipCrypto: result.zipCrypto,
+                         password: result.password)
+        }
+    }
+
+    private func defaultPackOutput(for inputs: [URL]) -> URL {
+        if inputs.count == 1 {
+            let single = inputs[0]
+            return single.deletingLastPathComponent()
+                .appendingPathComponent(single.deletingPathExtension().lastPathComponent)
+                .appendingPathExtension("zip")
+        }
+        return inputs[0].deletingLastPathComponent()
+            .appendingPathComponent(L("Archive"))
+            .appendingPathExtension("zip")
+    }
+
+    private func runPack(_ urls: [URL], cp932: Bool, zipCrypto: Bool, password: String?) {
+        var options = Packer.Options()
+        options.nameEncoding = cp932 ? .cp932 : .utf8
+        if let password {
+            options.encryption = zipCrypto ? .zipCrypto(password: password) : .aes256(password: password)
+        }
+        let output = defaultPackOutput(for: urls)
+        let progress = ProgressSheet(title: L("Packing…"))
+        if let hostWindow { progress.begin(on: hostWindow) }
+        let flag = progress.flag
+        DispatchQueue.global(qos: .userInitiated).async {
+            do {
+                let result = try Packer.pack(
+                    inputs: urls, output: output, options: options,
+                    progress: { name in
+                        DispatchQueue.main.async { progress.update(name) }
+                    },
+                    shouldCancel: { flag.isCancelled })
+                DispatchQueue.main.async {
+                    progress.end()
+                    NSWorkspace.shared.activateFileViewerSelecting([result.outputURL])
+                    self.busy = false
+                }
+            } catch is CancellationError {
+                DispatchQueue.main.async {
+                    progress.end()
+                    self.busy = false
+                }
+            } catch {
+                DispatchQueue.main.async {
+                    progress.end()
+                    self.showError(L("Could not create the archive."), Self.describe(error))
+                    self.busy = false
+                }
+            }
+        }
+    }
+
+    // MARK: - Unpack flow
+
+    private func startUnpackQueue(_ zips: [URL]) {
+        busy = true
+        var queue = zips
+        func next() {
+            guard let zip = queue.first else {
+                busy = false
+                return
+            }
+            queue.removeFirst()
+            unpackOne(zip) { next() }
+        }
+        next()
+    }
+
+    private func resolveDestination(_ prefs: Preferences,
+                                    completion: @escaping (URL?, _ cancelled: Bool) -> Void) {
+        switch prefs.destinationMode {
+        case .sameFolder:
+            completion(nil, false)
+        case .fixed:
+            completion(prefs.fixedDestinationPath.map { URL(fileURLWithPath: $0) }, false)
+        case .ask:
+            let panel = NSOpenPanel()
+            panel.canChooseFiles = false
+            panel.canChooseDirectories = true
+            panel.canCreateDirectories = true
+            panel.prompt = L("Extract")
+            guard let hostWindow else {
+                completion(nil, false)
+                return
+            }
+            panel.beginSheetModal(for: hostWindow) { response in
+                if response == .OK, let url = panel.url {
+                    completion(url, false)
+                } else {
+                    completion(nil, true)
+                }
+            }
+        }
+    }
+
+    private func unpackOne(_ zip: URL, password: String? = nil,
+                           destination: URL? = nil, destinationResolved: Bool = false,
+                           completion: @escaping () -> Void) {
+        let prefs = Preferences.load()
+        if !destinationResolved {
+            resolveDestination(prefs) { [weak self] dest, cancelled in
+                guard let self else { return }
+                if cancelled {
+                    completion()
+                    return
+                }
+                self.unpackOne(zip, password: password, destination: dest,
+                               destinationResolved: true, completion: completion)
+            }
+            return
+        }
+
+        var options = Unpacker.Options()
+        options.destination = destination
+        options.password = password
+        options.folderPolicy = prefs.wrapMode.folderPolicy
+        let progress = ProgressSheet(title: L("Extracting…"))
+        if let hostWindow { progress.begin(on: hostWindow) }
+        let flag = progress.flag
+        DispatchQueue.global(qos: .userInitiated).async {
+            do {
+                let result = try Unpacker.unpack(
+                    zipURL: zip, options: options,
+                    progress: { name in
+                        DispatchQueue.main.async { progress.update(name) }
+                    },
+                    shouldCancel: { flag.isCancelled })
+                DispatchQueue.main.async {
+                    progress.end()
+                    self.finishUnpack(zip: zip, result: result, prefs: prefs)
+                    completion()
+                }
+            } catch let error as ZipReaderError where Self.isPasswordProblem(error) {
+                DispatchQueue.main.async {
+                    progress.end()
+                    let hint = error == .passwordRequired
+                        ? L("This archive is encrypted.")
+                        : L("Wrong password. Try again.")
+                    guard let hostWindow = self.hostWindow else {
+                        completion()
+                        return
+                    }
+                    PasswordSheet(message: "\(zip.lastPathComponent) — \(hint)")
+                        .present(on: hostWindow) { entered in
+                            guard let entered, !entered.isEmpty else {
+                                completion()
+                                return
+                            }
+                            self.unpackOne(zip, password: entered, destination: destination,
+                                           destinationResolved: true, completion: completion)
+                        }
+                }
+            } catch is CancellationError {
+                DispatchQueue.main.async {
+                    progress.end()
+                    completion()
+                }
+            } catch {
+                DispatchQueue.main.async {
+                    progress.end()
+                    self.showError(L("Could not extract the archive."), Self.describe(error))
+                    completion()
+                }
+            }
+        }
+    }
+
+    private static func isPasswordProblem(_ error: ZipReaderError) -> Bool {
+        switch error {
+        case .passwordRequired, .wrongPassword, .authenticationFailed:
+            return true
+        default:
+            return false
+        }
+    }
+
+    private func finishUnpack(zip: URL, result: Unpacker.Result, prefs: Preferences) {
+        if prefs.folderDate == .archive, result.createdWrapper,
+           let mtime = (try? FileManager.default.attributesOfItem(atPath: zip.path))?[.modificationDate] as? Date {
+            try? FileManager.default.setAttributes(
+                [.modificationDate: mtime], ofItemAtPath: result.root.path)
+        }
+        if prefs.trashArchiveAfterExtract {
+            try? FileManager.default.trashItem(at: zip, resultingItemURL: nil)
+        }
+        if prefs.revealInFinder {
+            NSWorkspace.shared.activateFileViewerSelecting(result.extractedTopItems)
+        }
+    }
+
+    private static func describe(_ error: Error) -> String {
+        switch error {
+        case let e as ZipWriterError:
+            if case .nameNotEncodable(let name) = e {
+                return "'\(name)' — CP932"
+            }
+            return "\(e)"
+        case let e as ZipReaderError:
+            return "\(e)"
+        default:
+            return error.localizedDescription
+        }
+    }
+}

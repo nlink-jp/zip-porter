@@ -4,12 +4,22 @@ import Foundation
 /// symlinks skipped, never overwrite existing files (unique names), and
 /// multi-top-level archives wrapped in a folder named after the ZIP.
 public enum Unpacker {
+    /// When to wrap extracted content in a new folder named after the ZIP
+    /// (The Unarchiver's "展開したファイル用の新規フォルダを作成").
+    public enum FolderPolicy: Sendable, Equatable {
+        /// Only when the archive has multiple top-level items (default).
+        case onlyMultipleTopLevel
+        case always
+        case never
+    }
+
     public struct Options: Sendable {
         /// Destination directory; default is the ZIP's own directory.
         public var destination: URL?
         public var password: String?
         /// Force the name encoding for entries without the UTF-8 flag.
         public var forcedEncoding: NameEncoding?
+        public var folderPolicy: FolderPolicy = .onlyMultipleTopLevel
         public init() {}
     }
 
@@ -17,6 +27,10 @@ public enum Unpacker {
         /// Where the content landed: the wrapper folder, the single
         /// top-level item, or the destination directory itself.
         public var root: URL
+        /// The top-level items that were created (for Finder reveal).
+        public var extractedTopItems: [URL]
+        /// True when a wrapper folder was created by this extraction.
+        public var createdWrapper: Bool
         public var extractedFiles: Int
         public var extractedDirectories: Int
         /// Entry names skipped because their paths escape the destination
@@ -93,38 +107,58 @@ public enum Unpacker {
             throw ZipReaderError.passwordRequired
         }
 
-        // Single top-level item extracts as itself; anything else is wrapped
-        // in a folder named after the archive. Either way the top-level name
-        // is uniquified so nothing existing is ever touched.
+        // Folder policy decides whether content goes into a wrapper folder
+        // named after the ZIP. Top-level names are always uniquified so
+        // nothing existing is ever touched.
         let topNames = Set(work.map { $0.components[0] })
+        let wrap: Bool
+        switch options.folderPolicy {
+        case .always: wrap = true
+        case .never: wrap = false
+        case .onlyMultipleTopLevel: wrap = topNames.count > 1
+        }
+
         let root: URL
-        var rename: (from: String, to: String)?
-        if topNames.count == 1, let top = topNames.first {
-            let target = PathUtil.uniqueURL(destBase.appendingPathComponent(top))
-            root = target
-            if target.lastPathComponent != top {
-                rename = (top, target.lastPathComponent)
-            }
-        } else {
+        let base: URL
+        var renames: [String: String] = [:]
+        var topItems: [URL] = []
+        if wrap {
             let stem = zipURL.deletingPathExtension().lastPathComponent
             let wrapper = PathUtil.uniqueURL(
                 destBase.appendingPathComponent(stem.isEmpty ? "Archive" : stem))
             try FileManager.default.createDirectory(at: wrapper, withIntermediateDirectories: true)
             root = wrapper
-            rename = nil
+            base = wrapper
+            topItems = [wrapper]
+        } else {
+            // Uniquify each top-level name — against the filesystem AND the
+            // other assigned names, so "docs"→"docs 2" can't collide with a
+            // genuine "docs 2" top-level entry.
+            var assigned = Set<String>()
+            for top in topNames.sorted() {
+                let final = PathUtil.uniqueName(top) { candidate in
+                    assigned.contains(candidate)
+                        || FileManager.default.fileExists(
+                            atPath: destBase.appendingPathComponent(candidate).path)
+                }
+                assigned.insert(final)
+                if final != top { renames[top] = final }
+                topItems.append(destBase.appendingPathComponent(final))
+            }
+            base = destBase
+            root = topItems.count == 1 ? topItems[0] : destBase
         }
 
         var files = 0
         var directories = 0
-        let base = topNames.count == 1 ? destBase : root
 
         func extractAll() throws {
             for (entry, rawComponents) in work {
                 if shouldCancel?() == true { throw CancellationError() }
                 var components = rawComponents
                 progress?(rawComponents.joined(separator: "/"))
-                if let rename, components[0] == rename.from {
-                    components[0] = rename.to
+                if let renamed = renames[components[0]] {
+                    components[0] = renamed
                 }
                 let target = components.reduce(base) { $0.appendingPathComponent($1) }
 
@@ -167,14 +201,19 @@ public enum Unpacker {
         do {
             try extractAll()
         } catch {
-            // Never leave a half-written tree behind; `root` is always a
-            // path this call created.
-            try? FileManager.default.removeItem(at: root)
+            // Never leave a half-written tree behind. Remove only the
+            // top-level items this call created — `root` can be the
+            // pre-existing destination directory under `.never`.
+            for item in topItems {
+                try? FileManager.default.removeItem(at: item)
+            }
             throw error
         }
 
         return Result(
             root: root,
+            extractedTopItems: topItems,
+            createdWrapper: wrap,
             extractedFiles: files,
             extractedDirectories: directories,
             skippedUnsafe: skippedUnsafe,
