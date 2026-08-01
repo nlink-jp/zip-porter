@@ -25,10 +25,12 @@ enum ZipPorterMain {
             // answer on stdout and exit before any AppKit machinery starts.
             print("zip-porter \(AppInfo.version)")
             exit(0)
-        case .pack, .unpack, .inspect:
-            FileHandle.standardError.write(Data(
-                "zip-porter: this command is not implemented yet (engine phase in progress)\n".utf8))
-            exit(64)
+        case .pack(let args):
+            CLIRun.pack(args)
+        case .unpack(let args):
+            CLIRun.unpack(args)
+        case .inspect(let args):
+            CLIRun.inspect(args)
         case .unknown(let word):
             FileHandle.standardError.write(Data(
                 "zip-porter: unknown command '\(word)'\n\(CLI.usage)\n".utf8))
