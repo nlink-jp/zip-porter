@@ -129,8 +129,17 @@ docs/{en,ja}/               RFP (design of record)
   you touch the launch path.
 - The one-shot launch rule lives in AppDelegate: `isOneShotLaunch` is set
   only for open events that predate launch completion, and cleared by any
-  drop or by opening Settings, so an app the user opened themselves never
-  quits under them.
+  drop, a Dock-icon reopen, or opening Settings, so an app the user opened
+  themselves never quits under them. In that mode the droplet window is
+  never created, so `MainViewController.hostWindow` is nil and every dialog
+  goes through `DialogPresenter`, which falls back to a standalone window.
+  Keep `hostWindow` guarded by `isViewLoaded` — touching `view` would build
+  the droplet UI the mode exists to avoid.
+- Dialogs that hold fixed-width fields need the container-plus-explicit-
+  width treatment too (the password field was being squeezed against the
+  right edge). Inside them use `alignment = .leading` plus width
+  constraints on the rows that should span; stack-wide `.width` alignment
+  drags label text to the right.
 - Signing: pure AppKit needs **no entitlements** (see CONVENTIONS.md).
 - Interactive password E2E uses `/usr/bin/expect` (`script -q` piping
   hangs); see the session E2E notes.

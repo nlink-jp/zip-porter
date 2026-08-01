@@ -81,6 +81,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         didFinishLaunching = true
+        let queued = pendingURLs
+        pendingURLs = []
+
+        // Launched by Finder to handle one archive: the droplet window would
+        // be noise for a job the user already described by double-clicking.
+        // Only the status dialog appears, and the app leaves when it is done.
+        if queued.isEmpty {
+            showDropWindow()
+        } else {
+            NSApp.activate()
+            mainViewController.handle(queued)
+        }
+    }
+
+    private func showDropWindow() {
+        if let window {
+            window.makeKeyAndOrderFront(nil)
+            NSApp.activate()
+            return
+        }
         let window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 460, height: 320),
             styleMask: [.titled, .closable, .miniaturizable],
@@ -93,12 +113,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         self.window = window
         window.makeKeyAndOrderFront(nil)
         NSApp.activate()
-
-        let queued = pendingURLs
-        pendingURLs = []
-        if !queued.isEmpty {
-            mainViewController.handle(queued)
-        }
     }
 
     /// Finder integration: double-clicked .zip files (LSHandlerRank Default)
@@ -112,13 +126,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         mainViewController.handle(urls)
     }
 
+    /// Clicking the Dock icon of a still-running one-shot launch is the user
+    /// asking for the app itself — give them the droplet window and stop
+    /// treating the session as disposable.
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
-        if !flag { window?.makeKeyAndOrderFront(nil) }
+        if !flag {
+            isOneShotLaunch = false
+            showDropWindow()
+        }
         return true
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
-        true
+        // A one-shot run ends when its work does, not when a dialog closes —
+        // quitting on window count would cut off the reveal-in-Finder step.
+        !isOneShotLaunch
     }
 
     @objc func showSettings(_ sender: Any?) {

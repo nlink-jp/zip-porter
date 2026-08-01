@@ -2,6 +2,21 @@
 
 ## [Unreleased]
 
+## [v0.3.1] - 2026-08-01
+
+### Changed
+
+- **A ZIP opened from Finder no longer opens the droplet window** — the
+  double-click already said what to do, so only the status dialog appears,
+  and the app leaves when the work is done. Clicking the Dock icon brings
+  the droplet window back and keeps the app around
+
+### Fixed
+
+- The password dialog squeezed its input field against the right edge; it
+  and the pack options dialog now share even margins with their fields
+  spanning the full width
+
 ## [v0.3.0] - 2026-08-01
 
 ### Added
@@ -110,7 +125,8 @@ instead of consuming resources or silently losing data.
   reveal in Finder, move archive to Trash
 - en/ja localization; app icon
 
-[Unreleased]: https://github.com/nlink-jp/zip-porter/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/nlink-jp/zip-porter/compare/v0.3.1...HEAD
+[v0.3.1]: https://github.com/nlink-jp/zip-porter/compare/v0.3.0...v0.3.1
 [v0.3.0]: https://github.com/nlink-jp/zip-porter/compare/v0.2.2...v0.3.0
 [v0.2.2]: https://github.com/nlink-jp/zip-porter/compare/v0.2.1...v0.2.2
 [v0.2.1]: https://github.com/nlink-jp/zip-porter/compare/v0.2.0...v0.2.1

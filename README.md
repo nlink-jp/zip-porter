@@ -42,8 +42,9 @@ Launch ZipPorter and drop things on the window:
   handler) → it is extracted. Encrypted archives prompt for the password
 - Both operations show a status dialog while they run and then report what
   they did (files and folders, plus anything skipped or renamed). An
-  archive opened by double-click quits the app once you dismiss that
-  dialog; dropping onto the window leaves it open for the next file
+  archive opened by double-click shows only that dialog — no droplet
+  window — and quits the app once you dismiss it; dropping onto the window
+  leaves it open for the next file
 - **Settings** (the gear in the window, or ⌘,) — The Unarchiver-style
   extraction preferences:
   destination (same folder / ask every time / a fixed folder), when to

@@ -18,6 +18,30 @@ final class CancellationFlag: @unchecked Sendable {
     }
 }
 
+/// Presents the operation dialogs either as a sheet on the droplet window
+/// or, when the app was launched straight from Finder and has no window of
+/// its own, as a standalone window.
+@MainActor
+enum DialogPresenter {
+    static func present(_ window: NSWindow, on parent: NSWindow?) {
+        if let parent {
+            parent.beginSheet(window)
+        } else {
+            window.center()
+            window.makeKeyAndOrderFront(nil)
+            NSApp.activate()
+        }
+    }
+
+    static func dismiss(_ window: NSWindow) {
+        if let parent = window.sheetParent {
+            parent.endSheet(window)
+        } else {
+            window.orderOut(nil)
+        }
+    }
+}
+
 /// Result of the pack options sheet.
 struct PackSheetResult {
     var password: String?
@@ -64,7 +88,9 @@ final class PackOptionsSheet: NSObject {
         for (label, field) in [(passwordLabel, passwordField), (verifyLabel, verifyField)] {
             label.widthAnchor.constraint(equalToConstant: 90).isActive = true
             label.alignment = .right
-            field.widthAnchor.constraint(equalToConstant: 240).isActive = true
+            // The field takes the rest of the row instead of stopping short
+            // and leaving a lopsided gap at the right edge.
+            field.setContentHuggingPriority(.defaultLow, for: .horizontal)
         }
 
         let okButton = NSButton(title: L("Create ZIP"), target: self, action: #selector(confirmed))
@@ -81,10 +107,22 @@ final class PackOptionsSheet: NSObject {
         stack.orientation = .vertical
         stack.alignment = .leading
         stack.spacing = 10
-        stack.edgeInsets = NSEdgeInsets(top: 20, left: 20, bottom: 20, right: 20)
-        buttons.widthAnchor.constraint(equalTo: stack.widthAnchor, constant: -40).isActive = true
-        sheet.contentView = stack
-        sheet.setContentSize(stack.fittingSize)
+        stack.translatesAutoresizingMaskIntoConstraints = false
+        for view in [passwordRow, verifyRow, buttons] as [NSView] {
+            view.widthAnchor.constraint(equalTo: stack.widthAnchor).isActive = true
+        }
+
+        let container = NSView()
+        container.addSubview(stack)
+        NSLayoutConstraint.activate([
+            container.widthAnchor.constraint(equalToConstant: 460),
+            stack.topAnchor.constraint(equalTo: container.topAnchor, constant: 20),
+            stack.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 20),
+            stack.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -20),
+            stack.bottomAnchor.constraint(equalTo: container.bottomAnchor, constant: -20),
+        ])
+        sheet.contentView = container
+        sheet.setContentSize(container.fittingSize)
         toggledPassword()
     }
 
@@ -121,17 +159,17 @@ final class PackOptionsSheet: NSObject {
     @objc private func cancelled() { finish(nil) }
 
     private func finish(_ result: PackSheetResult?) {
-        guard let parent = sheet.sheetParent else { return }
-        parent.endSheet(sheet)
+        DialogPresenter.dismiss(sheet)
         completion?(result)
         completion = nil
         retainedSelf = nil
     }
 
-    func present(on window: NSWindow, completion: @escaping (PackSheetResult?) -> Void) {
+    func present(on window: NSWindow?, completion: @escaping (PackSheetResult?) -> Void) {
         self.completion = completion
         retainedSelf = self
-        window.beginSheet(sheet)
+        sheet.title = L("Create ZIP")
+        DialogPresenter.present(sheet, on: window)
     }
 }
 
@@ -151,7 +189,7 @@ final class PasswordSheet: NSObject {
         title.font = .boldSystemFont(ofSize: NSFont.systemFontSize)
         let messageLabel = NSTextField(labelWithString: message)
         messageLabel.font = .systemFont(ofSize: NSFont.smallSystemFontSize)
-        field.widthAnchor.constraint(equalToConstant: 300).isActive = true
+        messageLabel.lineBreakMode = .byTruncatingMiddle
 
         let okButton = NSButton(title: L("Extract"), target: self, action: #selector(confirmed))
         okButton.keyEquivalent = "\r"
@@ -164,27 +202,43 @@ final class PasswordSheet: NSObject {
         stack.orientation = .vertical
         stack.alignment = .leading
         stack.spacing = 10
-        stack.edgeInsets = NSEdgeInsets(top: 20, left: 20, bottom: 20, right: 20)
-        buttons.widthAnchor.constraint(equalTo: stack.widthAnchor, constant: -40).isActive = true
-        sheet.contentView = stack
-        sheet.setContentSize(stack.fittingSize)
+        stack.translatesAutoresizingMaskIntoConstraints = false
+        // The field and the button row span the dialog; labels stay left.
+        // (Stack-wide `.width` alignment would drag the labels' text right.)
+        for view in [field, buttons] as [NSView] {
+            view.widthAnchor.constraint(equalTo: stack.widthAnchor).isActive = true
+        }
+
+        // Same trick as the settings window: a bare stack as contentView is
+        // sized to its own fitting width and squeezes fixed-width subviews.
+        let container = NSView()
+        container.addSubview(stack)
+        NSLayoutConstraint.activate([
+            container.widthAnchor.constraint(equalToConstant: 420),
+            stack.topAnchor.constraint(equalTo: container.topAnchor, constant: 20),
+            stack.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 20),
+            stack.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -20),
+            stack.bottomAnchor.constraint(equalTo: container.bottomAnchor, constant: -20),
+        ])
+        sheet.contentView = container
+        sheet.setContentSize(container.fittingSize)
     }
 
     @objc private func confirmed() { finish(field.stringValue) }
     @objc private func cancelled() { finish(nil) }
 
     private func finish(_ result: String?) {
-        guard let parent = sheet.sheetParent else { return }
-        parent.endSheet(sheet)
+        DialogPresenter.dismiss(sheet)
         completion?(result)
         completion = nil
         retainedSelf = nil
     }
 
-    func present(on window: NSWindow, completion: @escaping (String?) -> Void) {
+    func present(on window: NSWindow?, completion: @escaping (String?) -> Void) {
         self.completion = completion
         retainedSelf = self
-        window.beginSheet(sheet)
+        sheet.title = L("Password required")
+        DialogPresenter.present(sheet, on: window)
         sheet.makeFirstResponder(field)
     }
 }
@@ -251,9 +305,15 @@ final class OperationSheet: NSObject {
     @objc private func cancelPressed() { flag.cancel() }
     @objc private func donePressed() { dismiss() }
 
-    func begin(on window: NSWindow) {
+    /// `window` is nil when the app was launched by Finder to handle one
+    /// archive: there is no droplet window, so the status dialog stands on
+    /// its own.
+    func begin(on window: NSWindow?) {
         retainedSelf = self
-        window.beginSheet(sheet)
+        // Standalone presentation shows a title bar; the content already
+        // carries the operation state, so the bar just names the app.
+        sheet.title = "ZipPorter"
+        DialogPresenter.present(sheet, on: window)
         indicator.startAnimation(nil)
     }
 
@@ -288,9 +348,7 @@ final class OperationSheet: NSObject {
     /// Close without a result (cancelled, or an error alert takes over).
     func dismiss() {
         indicator.stopAnimation(nil)
-        if let parent = sheet.sheetParent {
-            parent.endSheet(sheet)
-        }
+        DialogPresenter.dismiss(sheet)
         let completion = dismissal
         dismissal = nil
         retainedSelf = nil

@@ -85,7 +85,9 @@ final class MainViewController: NSViewController, DropViewDelegate {
         SettingsWindowController.shared.show()
     }
 
-    private var hostWindow: NSWindow? { view.window }
+    /// nil on the Finder-launch path: no droplet window is created there,
+    /// and asking for `view` would build one. Dialogs stand alone instead.
+    private var hostWindow: NSWindow? { isViewLoaded ? view.window : nil }
 
     // MARK: - Entry points
 
@@ -131,10 +133,6 @@ final class MainViewController: NSViewController, DropViewDelegate {
             runPack(urls, cp932: prefs.cp932, zipCrypto: false, password: nil)
             return
         }
-        guard let hostWindow else {
-            busy = false
-            return
-        }
         PackOptionsSheet(prefs: prefs).present(on: hostWindow) { [weak self] result in
             guard let self else { return }
             guard let result else {
@@ -172,7 +170,7 @@ final class MainViewController: NSViewController, DropViewDelegate {
         }
         let output = defaultPackOutput(for: urls)
         let sheet = OperationSheet(title: L("Packing…"))
-        if let hostWindow { sheet.begin(on: hostWindow) }
+        sheet.begin(on: hostWindow)
         let flag = sheet.flag
         DispatchQueue.global(qos: .userInitiated).async {
             do {
@@ -253,7 +251,8 @@ final class MainViewController: NSViewController, DropViewDelegate {
             panel.canCreateDirectories = true
             panel.prompt = L("Extract")
             guard let hostWindow else {
-                completion(nil, false)
+                let response = panel.runModal()
+                completion(response == .OK ? panel.url : nil, response != .OK)
                 return
             }
             panel.beginSheetModal(for: hostWindow) { response in
@@ -288,7 +287,7 @@ final class MainViewController: NSViewController, DropViewDelegate {
         options.password = password
         options.folderPolicy = prefs.wrapMode.folderPolicy
         let sheet = OperationSheet(title: L("Extracting…"))
-        if let hostWindow { sheet.begin(on: hostWindow) }
+        sheet.begin(on: hostWindow)
         let flag = sheet.flag
         DispatchQueue.global(qos: .userInitiated).async {
             do {
@@ -315,12 +314,8 @@ final class MainViewController: NSViewController, DropViewDelegate {
                     let hint = error == .passwordRequired
                         ? L("This archive is encrypted.")
                         : L("Wrong password. Try again.")
-                    guard let hostWindow = self.hostWindow else {
-                        completion()
-                        return
-                    }
                     PasswordSheet(message: "\(zip.lastPathComponent) — \(hint)")
-                        .present(on: hostWindow) { entered in
+                        .present(on: self.hostWindow) { entered in
                             guard let entered, !entered.isEmpty else {
                                 completion()
                                 return
