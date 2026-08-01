@@ -122,6 +122,15 @@ docs/{en,ja}/               RFP (design of record)
 - Borderless buttons in a window with no other focusable view come up
   wearing a focus ring: set `focusRingType = .none` and
   `refusesFirstResponder = true` (the drop window's gear button).
+- **`application(_:open:)` fires before `applicationDidFinishLaunching`**
+  on a Finder double-click, so the main window does not exist yet and any
+  sheet silently goes nowhere. AppDelegate queues those URLs in
+  `pendingURLs` and handles them once the window is up — keep that queue if
+  you touch the launch path.
+- The one-shot launch rule lives in AppDelegate: `isOneShotLaunch` is set
+  only for open events that predate launch completion, and cleared by any
+  drop or by opening Settings, so an app the user opened themselves never
+  quits under them.
 - Signing: pure AppKit needs **no entitlements** (see CONVENTIONS.md).
 - Interactive password E2E uses `/usr/bin/expect` (`script -q` piping
   hangs); see the session E2E notes.

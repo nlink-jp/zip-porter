@@ -189,35 +189,56 @@ final class PasswordSheet: NSObject {
     }
 }
 
-/// Indeterminate progress sheet with a Cancel button; `flag` is polled by
-/// the background operation.
+/// The operation sheet: shows live status while packing or extracting, then
+/// turns into the result summary in place — so a run started by a Finder
+/// double-click still says what it did before the app goes away.
 @MainActor
-final class ProgressSheet: NSObject {
+final class OperationSheet: NSObject {
     let flag = CancellationFlag()
     private let sheet: NSWindow
-    private let label = NSTextField(labelWithString: L("Preparing…"))
+    private let titleLabel: NSTextField
+    private let statusLabel = NSTextField(labelWithString: L("Preparing…"))
+    private let detailLabel = NSTextField(labelWithString: "")
     private let indicator = NSProgressIndicator()
-    private var retainedSelf: ProgressSheet?
+    private let cancelButton = NSButton()
+    private let doneButton = NSButton()
+    private var dismissal: (() -> Void)?
+    private var retainedSelf: OperationSheet?
+    private static let contentWidth: CGFloat = 380
 
     init(title: String) {
-        sheet = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 420, height: 10),
+        sheet = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 440, height: 10),
                          styleMask: [.titled], backing: .buffered, defer: false)
+        titleLabel = NSTextField(labelWithString: title)
         super.init()
-        let titleLabel = NSTextField(labelWithString: title)
         titleLabel.font = .boldSystemFont(ofSize: NSFont.systemFontSize)
-        label.font = .systemFont(ofSize: NSFont.smallSystemFontSize)
-        label.textColor = .secondaryLabelColor
-        label.lineBreakMode = .byTruncatingMiddle
-        label.widthAnchor.constraint(equalToConstant: 360).isActive = true
+        for label in [statusLabel, detailLabel] {
+            label.font = .systemFont(ofSize: NSFont.smallSystemFontSize)
+            label.textColor = .secondaryLabelColor
+            label.lineBreakMode = .byTruncatingMiddle
+            label.widthAnchor.constraint(equalToConstant: Self.contentWidth).isActive = true
+        }
+        detailLabel.usesSingleLineMode = false
+        detailLabel.cell?.wraps = true
+        detailLabel.isHidden = true
         indicator.style = .bar
         indicator.isIndeterminate = true
-        indicator.widthAnchor.constraint(equalToConstant: 360).isActive = true
+        indicator.widthAnchor.constraint(equalToConstant: Self.contentWidth).isActive = true
 
-        let cancelButton = NSButton(title: L("Cancel"), target: self, action: #selector(cancelPressed))
-        let buttons = NSStackView(views: [NSView(), cancelButton])
+        cancelButton.title = L("Cancel")
+        cancelButton.bezelStyle = .rounded
+        cancelButton.target = self
+        cancelButton.action = #selector(cancelPressed)
+        doneButton.title = L("Done")
+        doneButton.bezelStyle = .rounded
+        doneButton.keyEquivalent = "\r"
+        doneButton.target = self
+        doneButton.action = #selector(donePressed)
+        doneButton.isHidden = true
+
+        let buttons = NSStackView(views: [NSView(), cancelButton, doneButton])
         buttons.orientation = .horizontal
-
-        let stack = NSStackView(views: [titleLabel, indicator, label, buttons])
+        let stack = NSStackView(views: [titleLabel, indicator, statusLabel, detailLabel, buttons])
         stack.orientation = .vertical
         stack.alignment = .leading
         stack.spacing = 10
@@ -228,6 +249,7 @@ final class ProgressSheet: NSObject {
     }
 
     @objc private func cancelPressed() { flag.cancel() }
+    @objc private func donePressed() { dismiss() }
 
     func begin(on window: NSWindow) {
         retainedSelf = self
@@ -235,15 +257,43 @@ final class ProgressSheet: NSObject {
         indicator.startAnimation(nil)
     }
 
+    /// Live status line: the entry currently being processed.
     func update(_ text: String) {
-        label.stringValue = text
+        statusLabel.stringValue = text
     }
 
-    func end() {
+    /// Switch to the result state. The sheet stays up until the user
+    /// dismisses it, then `completion` runs.
+    func finish(title: String, summary: String, notes: [String], completion: @escaping () -> Void) {
+        indicator.stopAnimation(nil)
+        indicator.isHidden = true
+        cancelButton.isHidden = true
+        doneButton.isHidden = false
+        titleLabel.stringValue = title
+        statusLabel.stringValue = summary
+        statusLabel.textColor = .labelColor
+        if notes.isEmpty {
+            detailLabel.isHidden = true
+        } else {
+            detailLabel.isHidden = false
+            detailLabel.stringValue = notes.joined(separator: "\n")
+        }
+        dismissal = completion
+        if let stack = sheet.contentView {
+            sheet.setContentSize(stack.fittingSize)
+        }
+        sheet.makeFirstResponder(doneButton)
+    }
+
+    /// Close without a result (cancelled, or an error alert takes over).
+    func dismiss() {
         indicator.stopAnimation(nil)
         if let parent = sheet.sheetParent {
             parent.endSheet(sheet)
         }
+        let completion = dismissal
+        dismissal = nil
         retainedSelf = nil
+        completion?()
     }
 }

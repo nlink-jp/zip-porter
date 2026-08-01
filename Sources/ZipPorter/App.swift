@@ -54,14 +54,33 @@ enum ZipPorterMain {
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private var window: NSWindow?
     private let mainViewController = MainViewController()
+    /// True once launch is complete; open events that arrive before this
+    /// are the reason the app started (LaunchServices delivers them between
+    /// willFinishLaunching and didFinishLaunching).
+    private var didFinishLaunching = false
+    /// The app was started by Finder to handle a file and has done nothing
+    /// else since — it should go away when that work is done rather than
+    /// linger as an empty window the user never asked for.
+    private var isOneShotLaunch = false
+    /// Open events that arrived before the window existed; the operation
+    /// sheet needs a parent window, so they wait for it.
+    private var pendingURLs: [URL] = []
 
     func applicationWillFinishLaunching(_ notification: Notification) {
         // The menu must exist before launch finishes so Finder-open events
         // land in a fully wired app.
         NSApp.mainMenu = MainMenu.build()
+        mainViewController.workDidFinish = { [weak self] in
+            guard let self, self.isOneShotLaunch else { return }
+            NSApp.terminate(nil)
+        }
+        mainViewController.userDidInteract = { [weak self] in
+            self?.isOneShotLaunch = false
+        }
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        didFinishLaunching = true
         let window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 460, height: 320),
             styleMask: [.titled, .closable, .miniaturizable],
@@ -74,11 +93,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         self.window = window
         window.makeKeyAndOrderFront(nil)
         NSApp.activate()
+
+        let queued = pendingURLs
+        pendingURLs = []
+        if !queued.isEmpty {
+            mainViewController.handle(queued)
+        }
     }
 
     /// Finder integration: double-clicked .zip files (LSHandlerRank Default)
     /// and items dropped on the Dock icon arrive here.
     func application(_ application: NSApplication, open urls: [URL]) {
+        guard didFinishLaunching else {
+            isOneShotLaunch = true
+            pendingURLs.append(contentsOf: urls)
+            return
+        }
         mainViewController.handle(urls)
     }
 
@@ -92,6 +122,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     @objc func showSettings(_ sender: Any?) {
+        isOneShotLaunch = false
         SettingsWindowController.shared.show()
     }
 }

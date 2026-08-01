@@ -2,6 +2,30 @@
 
 ## [Unreleased]
 
+## [v0.3.0] - 2026-08-01
+
+### Added
+
+- **Operation status dialog** — packing and extracting now show a sheet with
+  live status while they run, which then turns into a result summary (what
+  was created or extracted, how many files and folders) instead of finishing
+  invisibly. Skipped unsafe paths, skipped symlinks, renamed duplicates and
+  excluded macOS metadata are listed there too, replacing the separate
+  post-extraction alert
+
+### Changed
+
+- **Opening a ZIP from Finder no longer leaves the app running.** When
+  ZipPorter is started by a double-clicked archive, it quits once the work
+  is done and its result dialog is dismissed. Dropping onto the window, or
+  opening an archive while the app is already running, keeps it around as
+  before
+
+### Fixed
+
+- Open events that arrived before the window existed (the Finder
+  double-click path) ran without any dialog and left the app idling
+
 ## [v0.2.2] - 2026-08-01
 
 ### Added
@@ -86,7 +110,8 @@ instead of consuming resources or silently losing data.
   reveal in Finder, move archive to Trash
 - en/ja localization; app icon
 
-[Unreleased]: https://github.com/nlink-jp/zip-porter/compare/v0.2.2...HEAD
+[Unreleased]: https://github.com/nlink-jp/zip-porter/compare/v0.3.0...HEAD
+[v0.3.0]: https://github.com/nlink-jp/zip-porter/compare/v0.2.2...v0.3.0
 [v0.2.2]: https://github.com/nlink-jp/zip-porter/compare/v0.2.1...v0.2.2
 [v0.2.1]: https://github.com/nlink-jp/zip-porter/compare/v0.2.0...v0.2.1
 [v0.2.0]: https://github.com/nlink-jp/zip-porter/compare/v0.1.0...v0.2.0

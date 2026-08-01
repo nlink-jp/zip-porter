@@ -4,8 +4,19 @@ import ZipPorterCore
 /// The drop window's content and the pack/unpack flows.
 @MainActor
 final class MainViewController: NSViewController, DropViewDelegate {
+    /// Called when the last queued operation finishes and its result sheet
+    /// is dismissed — the delegate uses this to quit a Finder-launched run.
+    var workDidFinish: (() -> Void)?
+    /// Called when the user drives the app themselves (a drop, or opening
+    /// settings), which means it is no longer a one-shot Finder launch.
+    var userDidInteract: (() -> Void)?
+
     private let dropView = DropView()
-    private var busy = false
+    private var busy = false {
+        didSet {
+            if !busy { workDidFinish?() }
+        }
+    }
 
     override func loadView() {
         let root = NSView(frame: NSRect(x: 0, y: 0, width: 460, height: 320))
@@ -70,6 +81,7 @@ final class MainViewController: NSViewController, DropViewDelegate {
     }
 
     @objc private func openSettings() {
+        userDidInteract?()
         SettingsWindowController.shared.show()
     }
 
@@ -78,6 +90,7 @@ final class MainViewController: NSViewController, DropViewDelegate {
     // MARK: - Entry points
 
     func dropView(_ view: DropView, didReceive urls: [URL]) {
+        userDidInteract?()
         handle(urls)
     }
 
@@ -158,37 +171,56 @@ final class MainViewController: NSViewController, DropViewDelegate {
             options.encryption = zipCrypto ? .zipCrypto(password: password) : .aes256(password: password)
         }
         let output = defaultPackOutput(for: urls)
-        let progress = ProgressSheet(title: L("Packing…"))
-        if let hostWindow { progress.begin(on: hostWindow) }
-        let flag = progress.flag
+        let sheet = OperationSheet(title: L("Packing…"))
+        if let hostWindow { sheet.begin(on: hostWindow) }
+        let flag = sheet.flag
         DispatchQueue.global(qos: .userInitiated).async {
             do {
                 let result = try Packer.pack(
                     inputs: urls, output: output, options: options,
                     progress: { name in
-                        DispatchQueue.main.async { progress.update(name) }
+                        DispatchQueue.main.async { sheet.update(name) }
                     },
                     shouldCancel: { flag.isCancelled })
                 DispatchQueue.main.async {
-                    progress.end()
-                    if Preferences.load().revealCreatedArchive {
-                        NSWorkspace.shared.activateFileViewerSelecting([result.outputURL])
+                    var notes: [String] = []
+                    if !result.skippedJunk.isEmpty {
+                        notes.append(L("Excluded macOS metadata files:")
+                            + " \(result.skippedJunk.count)")
                     }
-                    self.busy = false
+                    if !result.skippedSymlinks.isEmpty {
+                        notes.append(L("Skipped symbolic links:")
+                            + " \(result.skippedSymlinks.count)")
+                    }
+                    sheet.finish(
+                        title: L("Archive created"),
+                        summary: result.outputURL.lastPathComponent + "\n"
+                            + Self.itemCount(files: result.fileCount,
+                                             directories: result.directoryCount),
+                        notes: notes) {
+                        if Preferences.load().revealCreatedArchive {
+                            NSWorkspace.shared.activateFileViewerSelecting([result.outputURL])
+                        }
+                        self.busy = false
+                    }
                 }
             } catch is CancellationError {
                 DispatchQueue.main.async {
-                    progress.end()
+                    sheet.dismiss()
                     self.busy = false
                 }
             } catch {
                 DispatchQueue.main.async {
-                    progress.end()
+                    sheet.dismiss()
                     self.showError(L("Could not create the archive."), Self.describe(error))
                     self.busy = false
                 }
             }
         }
+    }
+
+    private static func itemCount(files: Int, directories: Int) -> String {
+        String(format: L("%1$d files, %2$d folders"), files, directories)
     }
 
     // MARK: - Unpack flow
@@ -255,25 +287,31 @@ final class MainViewController: NSViewController, DropViewDelegate {
         options.destination = destination
         options.password = password
         options.folderPolicy = prefs.wrapMode.folderPolicy
-        let progress = ProgressSheet(title: L("Extracting…"))
-        if let hostWindow { progress.begin(on: hostWindow) }
-        let flag = progress.flag
+        let sheet = OperationSheet(title: L("Extracting…"))
+        if let hostWindow { sheet.begin(on: hostWindow) }
+        let flag = sheet.flag
         DispatchQueue.global(qos: .userInitiated).async {
             do {
                 let result = try Unpacker.unpack(
                     zipURL: zip, options: options,
                     progress: { name in
-                        DispatchQueue.main.async { progress.update(name) }
+                        DispatchQueue.main.async { sheet.update(name) }
                     },
                     shouldCancel: { flag.isCancelled })
                 DispatchQueue.main.async {
-                    progress.end()
-                    self.finishUnpack(zip: zip, result: result, prefs: prefs)
-                    completion()
+                    sheet.finish(
+                        title: L("Archive extracted"),
+                        summary: result.root.lastPathComponent + "\n"
+                            + Self.itemCount(files: result.extractedFiles,
+                                             directories: result.extractedDirectories),
+                        notes: Self.extractionNotes(result)) {
+                        self.finishUnpack(zip: zip, result: result, prefs: prefs)
+                        completion()
+                    }
                 }
             } catch let error as ZipReaderError where Self.isPasswordProblem(error) {
                 DispatchQueue.main.async {
-                    progress.end()
+                    sheet.dismiss()
                     let hint = error == .passwordRequired
                         ? L("This archive is encrypted.")
                         : L("Wrong password. Try again.")
@@ -293,12 +331,12 @@ final class MainViewController: NSViewController, DropViewDelegate {
                 }
             } catch is CancellationError {
                 DispatchQueue.main.async {
-                    progress.end()
+                    sheet.dismiss()
                     completion()
                 }
             } catch {
                 DispatchQueue.main.async {
-                    progress.end()
+                    sheet.dismiss()
                     self.showError(L("Could not extract the archive."), Self.describe(error))
                     completion()
                 }
@@ -317,32 +355,23 @@ final class MainViewController: NSViewController, DropViewDelegate {
 
     /// Security-relevant outcomes must not be silent in the GUI the way a
     /// CLI warning line can be: unsafe paths were dropped, or entries were
-    /// renamed to avoid overwriting each other.
-    private func reportExtractionNotices(_ result: Unpacker.Result) {
+    /// renamed to avoid overwriting each other. These ride along in the
+    /// result sheet rather than in a second alert.
+    private static func extractionNotes(_ result: Unpacker.Result) -> [String] {
         var lines: [String] = []
         if !result.skippedUnsafe.isEmpty {
             lines.append(L("Skipped entries with unsafe paths:") + "\n"
-                + result.skippedUnsafe.prefix(10).map { "  \($0)" }.joined(separator: "\n"))
+                + result.skippedUnsafe.prefix(6).map { "  \($0)" }.joined(separator: "\n"))
         }
         if !result.skippedSymlinks.isEmpty {
-            lines.append(L("Skipped symbolic links:") + "\n"
-                + result.skippedSymlinks.prefix(10).map { "  \($0)" }.joined(separator: "\n"))
+            lines.append(L("Skipped symbolic links:") + " \(result.skippedSymlinks.count)")
         }
         if !result.renamedDuplicates.isEmpty {
             lines.append(L("Duplicate names were extracted under new names:") + "\n"
-                + result.renamedDuplicates.prefix(10)
+                + result.renamedDuplicates.prefix(6)
                     .map { "  \($0.original) → \($0.chosen)" }.joined(separator: "\n"))
         }
-        guard !lines.isEmpty else { return }
-        let alert = NSAlert()
-        alert.messageText = L("Extracted with changes")
-        alert.informativeText = lines.joined(separator: "\n\n")
-        alert.alertStyle = .informational
-        if let hostWindow {
-            alert.beginSheetModal(for: hostWindow)
-        } else {
-            alert.runModal()
-        }
+        return lines
     }
 
     private func finishUnpack(zip: URL, result: Unpacker.Result, prefs: Preferences) {
@@ -357,7 +386,6 @@ final class MainViewController: NSViewController, DropViewDelegate {
         if prefs.revealInFinder {
             NSWorkspace.shared.activateFileViewerSelecting(result.extractedTopItems)
         }
-        reportExtractionNotices(result)
     }
 
     private static func describe(_ error: Error) -> String {

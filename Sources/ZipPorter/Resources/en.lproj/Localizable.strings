@@ -60,5 +60,9 @@
 "Skipped entries with unsafe paths:" = "Skipped entries with unsafe paths:";
 "Skipped symbolic links:" = "Skipped symbolic links:";
 "Duplicate names were extracted under new names:" = "Duplicate names were extracted under new names:";
-"Extracted with changes" = "Extracted with changes";
 "Reveal the created archive in Finder" = "Reveal the created archive in Finder";
+"Done" = "Done";
+"Archive created" = "Archive created";
+"Archive extracted" = "Archive extracted";
+"%1$d files, %2$d folders" = "%1$d files, %2$d folders";
+"Excluded macOS metadata files:" = "Excluded macOS metadata files:";
