@@ -2,6 +2,18 @@
 
 ## [Unreleased]
 
+## [v0.8.2] - 2026-08-01
+
+### Fixed
+
+- **The completion banner was cut short on a Finder-launched run.** A
+  foreground notification lives only as long as the app that posted it, and
+  the app was quitting a fraction of a second later — the banner flashed
+  and vanished, or never rendered. The one-shot run now leaves the Dock
+  immediately (nothing lingers visually) and exits a few seconds later, so
+  the banner gets its normal time on screen. Verified for both packing and
+  extracting
+
 ## [v0.8.1] - 2026-08-01
 
 ### Fixed
@@ -229,7 +241,8 @@ instead of consuming resources or silently losing data.
   reveal in Finder, move archive to Trash
 - en/ja localization; app icon
 
-[Unreleased]: https://github.com/nlink-jp/zip-porter/compare/v0.8.1...HEAD
+[Unreleased]: https://github.com/nlink-jp/zip-porter/compare/v0.8.2...HEAD
+[v0.8.2]: https://github.com/nlink-jp/zip-porter/compare/v0.8.1...v0.8.2
 [v0.8.1]: https://github.com/nlink-jp/zip-porter/compare/v0.8.0...v0.8.1
 [v0.8.0]: https://github.com/nlink-jp/zip-porter/compare/v0.7.0...v0.8.0
 [v0.7.0]: https://github.com/nlink-jp/zip-porter/compare/v0.6.0...v0.7.0

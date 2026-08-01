@@ -148,6 +148,10 @@ docs/{en,ja}/               RFP (design of record)
   goes through `DialogPresenter`, which falls back to a standalone window.
   Keep `hostWindow` guarded by `isViewLoaded` — touching `view` would build
   the droplet UI the mode exists to avoid.
+- **A foreground notification dies with its app.** Terminating right after
+  posting cuts the banner short (v0.8.0/v0.8.1). The one-shot path drops to
+  `.accessory` so the Dock icon goes away at once, then terminates after a
+  few seconds — keep that delay if you touch the quit path.
 - **Never gate a notification on a cached authorization flag.**
   `requestAuthorization` is async; an operation that finishes first then
   skips its banner silently (this shipped in v0.8.0). Resolve

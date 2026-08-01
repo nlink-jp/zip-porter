@@ -9,7 +9,11 @@ import UserNotifications
 final class CompletionNotifier: NSObject, UNUserNotificationCenterDelegate {
     static let shared = CompletionNotifier()
 
-    /// Wire the delegate early (banners while frontmost need it). Safe to
+    /// Runs once the banner is actually on screen (or the wait times out),
+    /// so a one-shot launch does not terminate mid-presentation.
+    private var pendingCompletion: (@MainActor () -> Void)?
+
+    /// Wire the delegate early — foreground banners depend on it. Safe to
     /// call repeatedly.
     func prepare() {
         // UNUserNotificationCenter traps in unbundled processes (swift run).
@@ -20,12 +24,10 @@ final class CompletionNotifier: NSObject, UNUserNotificationCenterDelegate {
     /// Post the completion banner, then run `completion`.
     ///
     /// Authorization is resolved HERE, inside the chain — not from a cached
-    /// flag. A cached flag races the operation: a fast extraction finished
-    /// before the async authorization callback landed, so the banner was
-    /// skipped, and the one-shot quit then tore down the first-run
-    /// permission prompt before the user could answer it. Resolving in the
-    /// chain means a first run waits for the prompt's answer, and every
-    /// later run gets the settled state immediately.
+    /// flag, which races short operations and silently skips their banner.
+    /// The completion is then deferred until the system actually presents
+    /// the notification: terminating the app before that point cancels the
+    /// banner the user was supposed to see.
     func notify(title: String, body: String, completion: @escaping @MainActor () -> Void) {
         guard Bundle.main.bundleIdentifier != nil else {
             completion()
@@ -33,7 +35,7 @@ final class CompletionNotifier: NSObject, UNUserNotificationCenterDelegate {
         }
         let center = UNUserNotificationCenter.current()
         center.delegate = self
-        center.requestAuthorization(options: [.alert, .sound]) { granted, _ in
+        center.requestAuthorization(options: [.alert, .sound]) { [weak self] granted, _ in
             guard granted else {
                 DispatchQueue.main.async {
                     MainActor.assumeIsolated { completion() }
@@ -46,13 +48,29 @@ final class CompletionNotifier: NSObject, UNUserNotificationCenterDelegate {
             let request = UNNotificationRequest(
                 identifier: UUID().uuidString, content: content, trigger: nil)
             center.add(request) { _ in
-                // Give the banner a beat to materialize before a one-shot
-                // launch terminates the app; it survives the quit once shown.
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-                    MainActor.assumeIsolated { completion() }
+                DispatchQueue.main.async {
+                    MainActor.assumeIsolated {
+                        guard let self else {
+                            completion()
+                            return
+                        }
+                        self.pendingCompletion = completion
+                        // Presentation is asynchronous and not guaranteed
+                        // (Focus modes swallow banners), so never leave the
+                        // app waiting on it forever.
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
+                            self.runPendingCompletion()
+                        }
+                    }
                 }
             }
         }
+    }
+
+    private func runPendingCompletion() {
+        guard let completion = pendingCompletion else { return }
+        pendingCompletion = nil
+        completion()
     }
 
     /// Banners must show even while the app is frontmost — the droplet
@@ -62,5 +80,12 @@ final class CompletionNotifier: NSObject, UNUserNotificationCenterDelegate {
         willPresent notification: UNNotification,
         withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void) {
         completionHandler([.banner, .list])
+        // The banner is on screen now; let it settle before the caller's
+        // completion (which may quit the app) runs.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
+            MainActor.assumeIsolated {
+                CompletionNotifier.shared.runPendingCompletion()
+            }
+        }
     }
 }
