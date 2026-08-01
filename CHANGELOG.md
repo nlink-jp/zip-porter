@@ -2,6 +2,17 @@
 
 ## [Unreleased]
 
+## [v0.9.0] - 2026-08-01
+
+### Added
+
+- **Settings › General › "When finished successfully"** — choose how a
+  clean finish is announced: a **notification** (the default, as before), a
+  **dialog** to dismiss, or **nothing** at all. Runs that have something to
+  report — skipped unsafe paths, renamed duplicates, excluded metadata —
+  still use the dialog whatever this is set to, and errors still alert
+  (ADR-012: those must not be silent)
+
 ## [v0.8.3] - 2026-08-01
 
 ### Fixed
@@ -250,7 +261,8 @@ instead of consuming resources or silently losing data.
   reveal in Finder, move archive to Trash
 - en/ja localization; app icon
 
-[Unreleased]: https://github.com/nlink-jp/zip-porter/compare/v0.8.3...HEAD
+[Unreleased]: https://github.com/nlink-jp/zip-porter/compare/v0.9.0...HEAD
+[v0.9.0]: https://github.com/nlink-jp/zip-porter/compare/v0.8.3...v0.9.0
 [v0.8.3]: https://github.com/nlink-jp/zip-porter/compare/v0.8.2...v0.8.3
 [v0.8.2]: https://github.com/nlink-jp/zip-porter/compare/v0.8.1...v0.8.2
 [v0.8.1]: https://github.com/nlink-jp/zip-porter/compare/v0.8.0...v0.8.1

@@ -27,6 +27,7 @@ final class SettingsWindowController: NSWindowController {
     private let trashCheck = NSButton(checkboxWithTitle: L("Move the archive to the Trash"), target: nil, action: nil)
     private let showOptionsCheck = NSButton(checkboxWithTitle: L("Show Options When Creating a ZIP"), target: nil, action: nil)
     private let revealCreatedCheck = NSButton(checkboxWithTitle: L("Reveal the created archive in Finder"), target: nil, action: nil)
+    private let completionPopup = NSPopUpButton()
 
     private init() {
         let window = NSWindow(
@@ -76,6 +77,12 @@ final class SettingsWindowController: NSWindowController {
             check.target = self
             check.action = #selector(checkboxChanged)
         }
+        completionPopup.target = self
+        completionPopup.action = #selector(completionStyleChanged)
+        completionPopup.addItems(withTitles: [
+            L("Notification"), L("Dialog"), L("Nothing"),
+        ])
+        completionPopup.setContentHuggingPriority(.defaultLow, for: .horizontal)
 
         func destinationRow(_ title: String, _ chooser: DestinationPopup) -> NSStackView {
             let row = NSStackView(views: [NSTextField(labelWithString: title), chooser.popup])
@@ -83,6 +90,11 @@ final class SettingsWindowController: NSWindowController {
             row.spacing = 8
             return row
         }
+        let completionRow = NSStackView(views: [
+            NSTextField(labelWithString: L("When finished successfully:")), completionPopup,
+        ])
+        completionRow.orientation = .horizontal
+        completionRow.spacing = 8
         let destRow = destinationRow(L("Extract to:"), destinationPopup)
         let packDestRow = destinationRow(L("Create in:"), packDestinationPopup)
 
@@ -129,12 +141,20 @@ final class SettingsWindowController: NSWindowController {
             stack.spacing = 18
         }
 
+        let general = NSStackView(views: [completionRow])
+        general.orientation = .vertical
+        general.alignment = .leading
+        general.spacing = 18
+
         let stack = NSStackView(views: [
             sectionLabel(L("Extraction")),
             extraction,
             NSBox.separator(),
             sectionLabel(L("Creating")),
             creating,
+            NSBox.separator(),
+            sectionLabel(L("General")),
+            general,
         ])
         stack.orientation = .vertical
         stack.alignment = .leading
@@ -170,10 +190,25 @@ final class SettingsWindowController: NSWindowController {
         revealCheck.state = prefs.revealInFinder ? .on : .off
         trashCheck.state = prefs.trashArchiveAfterExtract ? .on : .off
         showOptionsCheck.state = prefs.skipOptions ? .off : .on
+        switch prefs.completionStyle {
+        case .notification: completionPopup.selectItem(withTitle: L("Notification"))
+        case .dialog: completionPopup.selectItem(withTitle: L("Dialog"))
+        case .silent: completionPopup.selectItem(withTitle: L("Nothing"))
+        }
         revealCreatedCheck.state = prefs.revealCreatedArchive ? .on : .off
     }
 
     // MARK: - Actions
+
+    @objc private func completionStyleChanged() {
+        var prefs = Preferences.load()
+        switch completionPopup.titleOfSelectedItem ?? "" {
+        case L("Dialog"): prefs.completionStyle = .dialog
+        case L("Nothing"): prefs.completionStyle = .silent
+        default: prefs.completionStyle = .notification
+        }
+        prefs.save()
+    }
 
     @objc private func radioChanged(_ sender: NSButton) {
         var prefs = Preferences.load()

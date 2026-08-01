@@ -43,12 +43,24 @@ struct Preferences {
         case archive
     }
 
+    /// How a clean finish is announced. Anything worth reading — skipped
+    /// unsafe paths, renamed duplicates, errors — always uses a dialog
+    /// regardless of this setting (ADR-012: those must not be silent).
+    enum CompletionStyle: String {
+        case notification
+        case dialog
+        case silent
+    }
+
     var destinationMode: DestinationMode = .sameFolder
     var fixedDestinationPath: String?
     var wrapMode: WrapMode = .onlyMultiple
     var folderDate: FolderDateMode = .now
     var revealInFinder = true
     var trashArchiveAfterExtract = false
+
+    // MARK: Shared
+    var completionStyle: CompletionStyle = .notification
 
     private enum Key {
         static let usePassword = "pack.usePassword"
@@ -64,6 +76,7 @@ struct Preferences {
         static let folderDate = "unpack.folderDate"
         static let revealInFinder = "unpack.revealInFinder"
         static let trashArchive = "unpack.trashArchive"
+        static let completionStyle = "completionStyle"
     }
 
     static func load(from defaults: UserDefaults = .standard) -> Preferences {
@@ -89,6 +102,8 @@ struct Preferences {
             ? true
             : defaults.bool(forKey: Key.revealInFinder)
         p.trashArchiveAfterExtract = defaults.bool(forKey: Key.trashArchive)
+        p.completionStyle = (defaults.string(forKey: Key.completionStyle)
+            .flatMap(CompletionStyle.init(rawValue:))) ?? .notification
         // A fixed destination that disappeared falls back to same-folder.
         if !Self.isUsableDirectory(p.fixedDestinationPath) {
             if p.destinationMode == .fixed { p.destinationMode = .sameFolder }
@@ -119,5 +134,6 @@ struct Preferences {
         defaults.set(folderDate.rawValue, forKey: Key.folderDate)
         defaults.set(revealInFinder, forKey: Key.revealInFinder)
         defaults.set(trashArchiveAfterExtract, forKey: Key.trashArchive)
+        defaults.set(completionStyle.rawValue, forKey: Key.completionStyle)
     }
 }

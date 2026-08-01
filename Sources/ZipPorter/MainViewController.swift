@@ -283,13 +283,9 @@ final class MainViewController: NSViewController, DropViewDelegate {
                         self.busy = false
                     }
                     if notes.isEmpty {
-                        // Clean run: no OK button to press — the sheet goes
-                        // away and the completion arrives as a banner.
-                        sheet.dismiss()
-                        CompletionNotifier.shared.notify(
-                            title: L("Archive created"),
-                            body: summary.replacingOccurrences(of: "\n", with: " — "),
-                            completion: done)
+                        self.announceCompletion(sheet: sheet,
+                                                title: L("Archive created"),
+                                                summary: summary, done: done)
                     } else {
                         sheet.finish(title: L("Archive created"),
                                      summary: summary, notes: notes, completion: done)
@@ -307,6 +303,30 @@ final class MainViewController: NSViewController, DropViewDelegate {
                     self.busy = false
                 }
             }
+        }
+    }
+
+
+    /// Announce a clean finish the way the user asked for: a banner, the
+    /// result dialog, or nothing at all. Runs `done` when the user is
+    /// through with it. Anything with notes never reaches here — those
+    /// always get the dialog (ADR-012).
+    private func announceCompletion(sheet: OperationSheet,
+                                    title: String,
+                                    summary: String,
+                                    done: @escaping @MainActor () -> Void) {
+        switch Preferences.load().completionStyle {
+        case .notification:
+            sheet.dismiss()
+            CompletionNotifier.shared.notify(
+                title: title,
+                body: summary.replacingOccurrences(of: "\n", with: " — "),
+                completion: done)
+        case .dialog:
+            sheet.finish(title: title, summary: summary, notes: [], completion: done)
+        case .silent:
+            sheet.dismiss()
+            done()
         }
     }
 
@@ -403,14 +423,9 @@ final class MainViewController: NSViewController, DropViewDelegate {
                         completion()
                     }
                     if notes.isEmpty {
-                        // Clean run: the sheet just goes away and completion
-                        // arrives as a banner — no OK button between the
-                        // user and the revealed Finder window.
-                        sheet.dismiss()
-                        CompletionNotifier.shared.notify(
-                            title: L("Archive extracted"),
-                            body: summary.replacingOccurrences(of: "\n", with: " — "),
-                            completion: done)
+                        self.announceCompletion(sheet: sheet,
+                                                title: L("Archive extracted"),
+                                                summary: summary, done: done)
                     } else {
                         sheet.finish(title: L("Archive extracted"),
                                      summary: summary, notes: notes, completion: done)

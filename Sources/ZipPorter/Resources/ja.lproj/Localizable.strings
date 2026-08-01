@@ -68,3 +68,8 @@
 "Create in:" = "アーカイブの作成先:";
 "Same folder as the original items" = "元の項目と同じフォルダ";
 "Ask every time" = "毎回確認する";
+"General" = "全般";
+"When finished successfully:" = "正常に完了したときの通知:";
+"Notification" = "通知を表示";
+"Dialog" = "ダイアログを表示";
+"Nothing" = "何も表示しない";
