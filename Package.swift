@@ -1,0 +1,31 @@
+// swift-tools-version: 5.9
+import PackageDescription
+
+let package = Package(
+    name: "ZipPorter",
+    defaultLocalization: "en",
+    platforms: [.macOS(.v14)],
+    targets: [
+        // UI-independent ZIP engine: reader/writer, file-name encoding
+        // (NFC / CP932), junk filtering, crypto. No AppKit imports allowed.
+        .target(
+            name: "ZipPorterCore",
+            path: "Sources/ZipPorterCore"
+        ),
+        .executableTarget(
+            name: "ZipPorter",
+            dependencies: ["ZipPorterCore"],
+            path: "Sources/ZipPorter"
+        ),
+        .testTarget(
+            name: "ZipPorterCoreTests",
+            dependencies: ["ZipPorterCore"],
+            path: "Tests/ZipPorterCoreTests"
+        ),
+        .testTarget(
+            name: "ZipPorterTests",
+            dependencies: ["ZipPorter"],
+            path: "Tests/ZipPorterTests"
+        ),
+    ]
+)
