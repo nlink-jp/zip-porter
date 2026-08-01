@@ -41,6 +41,12 @@ enum ParallelCompressor {
     }
 
     static let chunkSize = 256 << 10
+    /// Files at least this large compress as independent blocks in bounded
+    /// waves (ADR-014). Internal so tests can force the path with small data.
+    static var blockParallelThreshold: UInt64 = 32 << 20
+    /// Block granularity of the pigz-style join; ~16 MB costs no measurable
+    /// ratio versus one stream.
+    static let blockSize = 16 << 20
     /// Compressed output above this size goes to a scratch file, so peak
     /// memory stays near `concurrency × threshold` instead of archive-sized.
     static let spillThreshold = 16 << 20
@@ -60,11 +66,7 @@ enum ParallelCompressor {
         guard let head = try? handle.read(upToCount: probeSize), !head.isEmpty else {
             return false
         }
-        guard let deflater = try? DeflateStream(.compress) else { return true }
-        var produced = 0
-        do {
-            try deflater.process(head, final: true) { produced += $0.count }
-        } catch {
+        guard let produced = try? ZlibDeflate.compressBlock(head, isLast: true).count else {
             return true
         }
         return Double(produced) < Double(head.count) * (1 - minimumSaving)
@@ -82,12 +84,26 @@ enum ParallelCompressor {
         var results = [Result?](repeating: nil, count: urls.count)
         guard !urls.isEmpty else { return results }
 
+        // Large files get the block-parallel path one at a time; the rest
+        // run whole-file, one per core (ADR-013/014).
+        var smallIndexes: [Int] = []
+        var largeIndexes: [Int] = []
+        for (index, url) in urls.enumerated() where deflate[index] {
+            let size = (try? FileManager.default.attributesOfItem(atPath: url.path)[.size]
+                as? NSNumber)?.uint64Value ?? 0
+            if size >= blockParallelThreshold {
+                largeIndexes.append(index)
+            } else {
+                smallIndexes.append(index)
+            }
+        }
+
         // concurrentPerform sizes itself to the machine's cores, so peak
         // memory is bounded by cores × spillThreshold.
         let lock = NSLock()
         var failure: Error?
-        DispatchQueue.concurrentPerform(iterations: urls.count) { index in
-            guard deflate[index] else { return }
+        DispatchQueue.concurrentPerform(iterations: smallIndexes.count) { slot in
+            let index = smallIndexes[slot]
             lock.lock()
             let alreadyFailed = failure != nil
             lock.unlock()
@@ -108,6 +124,22 @@ enum ParallelCompressor {
             }
         }
 
+        if failure == nil {
+            for index in largeIndexes {
+                if shouldCancel?() == true { break }
+                do {
+                    results[index] = try compressLarge(urls[index],
+                                                       scratchDirectory: scratchDirectory,
+                                                       index: index,
+                                                       shouldCancel: shouldCancel)
+                    progress?(index)
+                } catch {
+                    failure = error
+                    break
+                }
+            }
+        }
+
         if let failure {
             cleanUp(results)
             throw failure
@@ -124,28 +156,111 @@ enum ParallelCompressor {
         }
     }
 
+    /// Block-parallel compression of one large file (ADR-014): read up to
+    /// `cores` blocks, compress them concurrently, append in order, repeat.
+    /// Every data block ends with a sync flush; a trailing empty Z_FINISH
+    /// block closes the stream, so no EOF lookahead is needed. Peak memory
+    /// is about cores × 2 × blockSize regardless of file size.
+    private static func compressLarge(_ url: URL,
+                                      scratchDirectory: URL,
+                                      index: Int,
+                                      shouldCancel: (() -> Bool)?) throws -> Result {
+        let input = try FileHandle(forReadingFrom: url)
+        defer { try? input.close() }
+        var sink = SpillSink(scratchDirectory: scratchDirectory, index: index)
+        var crc: UInt32 = 0
+        var uncompressed: UInt64 = 0
+        let cores = max(ProcessInfo.processInfo.activeProcessorCount, 1)
+
+        while true {
+            if shouldCancel?() == true {
+                sink.abandon()
+                throw CancellationError()
+            }
+            var wave: [Data] = []
+            while wave.count < cores,
+                  let chunk = try input.read(upToCount: blockSize), !chunk.isEmpty {
+                crc = ZlibDeflate.crc32(crc, chunk)
+                uncompressed += UInt64(chunk.count)
+                wave.append(chunk)
+            }
+            guard !wave.isEmpty else { break }
+
+            let lock = NSLock()
+            var outputs = [Data?](repeating: nil, count: wave.count)
+            var failure: Error?
+            DispatchQueue.concurrentPerform(iterations: wave.count) { i in
+                do {
+                    let out = try ZlibDeflate.compressBlock(wave[i], isLast: false)
+                    lock.lock()
+                    outputs[i] = out
+                    lock.unlock()
+                } catch {
+                    lock.lock()
+                    if failure == nil { failure = error }
+                    lock.unlock()
+                }
+            }
+            if let failure {
+                sink.abandon()
+                throw failure
+            }
+            for output in outputs {
+                try sink.emit(output ?? Data())
+            }
+            if wave.count < cores { break } // EOF reached inside this wave
+        }
+        try sink.emit(try ZlibDeflate.compressBlock(Data(), isLast: true))
+        return Result(crc32: crc, uncompressedSize: uncompressed,
+                      storage: try sink.finish())
+    }
+
     private static func compressOne(_ url: URL,
                                     scratchDirectory: URL,
                                     index: Int) throws -> Result {
         let input = try FileHandle(forReadingFrom: url)
         defer { try? input.close() }
-        let deflater = try DeflateStream(.compress)
-        var crc = CRC32()
+        let deflater = try ZlibDeflateStream()
+        var crc: UInt32 = 0
         var uncompressed: UInt64 = 0
+        var sink = SpillSink(scratchDirectory: scratchDirectory, index: index)
 
-        var buffer = Data()
-        var spillURL: URL?
-        var spillHandle: FileHandle?
+        do {
+            while let chunk = try input.read(upToCount: chunkSize), !chunk.isEmpty {
+                crc = ZlibDeflate.crc32(crc, chunk)
+                uncompressed += UInt64(chunk.count)
+                try deflater.process(chunk, final: false) { try sink.emit($0) }
+            }
+            try deflater.process(Data(), final: true) { try sink.emit($0) }
+        } catch {
+            sink.abandon()
+            throw error
+        }
+        return Result(crc32: crc, uncompressedSize: uncompressed,
+                      storage: try sink.finish())
+    }
 
-        func emit(_ chunk: Data) throws {
+    /// Accumulates compressed output in memory and moves to a scratch file
+    /// once it grows past the spill threshold.
+    private struct SpillSink {
+        let scratchDirectory: URL
+        let index: Int
+        private var buffer = Data()
+        private var spillURL: URL?
+        private var spillHandle: FileHandle?
+
+        init(scratchDirectory: URL, index: Int) {
+            self.scratchDirectory = scratchDirectory
+            self.index = index
+        }
+
+        mutating func emit(_ chunk: Data) throws {
             if let spillHandle {
                 try spillHandle.write(contentsOf: chunk)
                 return
             }
             buffer.append(chunk)
-            guard buffer.count > spillThreshold else { return }
-            // Grown past the memory budget: move what we have to a file and
-            // keep streaming there.
+            guard buffer.count > ParallelCompressor.spillThreshold else { return }
             let url = scratchDirectory.appendingPathComponent(
                 "zp-\(index)-\(UUID().uuidString).deflate")
             guard FileManager.default.createFile(atPath: url.path, contents: nil) else {
@@ -158,19 +273,23 @@ enum ParallelCompressor {
             spillHandle = handle
         }
 
-        while let chunk = try input.read(upToCount: chunkSize), !chunk.isEmpty {
-            crc.update(chunk)
-            uncompressed += UInt64(chunk.count)
-            try deflater.process(chunk, final: false, sink: emit)
+        mutating func finish() throws -> Result.Storage {
+            if let spillHandle, let spillURL {
+                try spillHandle.close()
+                self.spillHandle = nil
+                return .spill(spillURL)
+            }
+            return .memory(buffer)
         }
-        try deflater.process(Data(), final: true, sink: emit)
 
-        if let spillHandle, let spillURL {
-            try spillHandle.close()
-            return Result(crc32: crc.value, uncompressedSize: uncompressed,
-                          storage: .spill(spillURL))
+        /// Failure path: close and delete any scratch file.
+        mutating func abandon() {
+            try? spillHandle?.close()
+            spillHandle = nil
+            if let spillURL {
+                try? FileManager.default.removeItem(at: spillURL)
+            }
+            spillURL = nil
         }
-        return Result(crc32: crc.value, uncompressedSize: uncompressed,
-                      storage: .memory(buffer))
     }
 }

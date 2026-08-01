@@ -119,13 +119,13 @@ extraction refuses malformed archives rather than trying to salvage them
 
 Entries are compressed in parallel and written in order, so archives remain
 byte-for-byte deterministic. Files whose head does not compress are stored
-rather than deflated — faster, and slightly smaller. On a 12-core machine,
-a 310 MB / 150-file mixed corpus packs in 1.72 s (Apple `ditto`: 6.93 s,
-Info-ZIP `zip -r`: 7.00 s).
-
-A single large file still compresses on one core — see
-[ADR-013](https://github.com/nlink-jp/.github/blob/main/adr/013-zip-porter-parallel-compression.md)
-for why, and what it would take to change.
+rather than deflated — faster, and smaller. Large files additionally
+compress as independent blocks in parallel (zlib, the pigz join), so a
+single 180 MB file packs in under a second on a 12-core machine; a
+310 MB / 150-file mixed corpus takes 1.8 s where Apple `ditto` needs 6.9 s
+— at the same output size. Design notes:
+[ADR-013](https://github.com/nlink-jp/.github/blob/main/adr/013-zip-porter-parallel-compression.md),
+[ADR-014](https://github.com/nlink-jp/.github/blob/main/adr/014-zip-porter-zlib-parallel-deflate.md).
 
 ### inspect
 

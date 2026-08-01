@@ -2,6 +2,26 @@
 
 ## [Unreleased]
 
+## [v0.6.0] - 2026-08-01
+
+Single-file parallel deflate on zlib ([ADR-014](https://github.com/nlink-jp/.github/blob/main/adr/014-zip-porter-zlib-parallel-deflate.md)).
+
+### Changed
+
+- **Deflate now runs on the system zlib at level 6**, and entries above
+  32 MB compress as independent ~16 MB blocks in parallel, joined with
+  sync flushes into one standard deflate stream (the pigz technique).
+  A single 180 MB text file: 2.82 s → 0.87 s, and 9 % smaller. Every
+  archive now matches `ditto`/Info-ZIP output size, removing the size
+  penalty carried since v0.1.0
+- Verified against five independent readers: Info-ZIP unzip, 7-Zip,
+  Apple ditto, Python zipfile, and our own extractor
+- Peak memory for the block path stays around cores × 32 MB regardless
+  of file size; inflate is unchanged (Compression framework)
+- Trade-off, accepted per the ADR: many-small-file text workloads pay
+  zlib's slower per-stream speed for the smaller output (240 MB of text:
+  0.73 s → 1.21 s, 9 % smaller; still ~6× faster than `ditto`)
+
 ## [v0.5.0] - 2026-08-01
 
 Compression throughput ([ADR-013](https://github.com/nlink-jp/.github/blob/main/adr/013-zip-porter-parallel-compression.md)).
@@ -167,7 +187,8 @@ instead of consuming resources or silently losing data.
   reveal in Finder, move archive to Trash
 - en/ja localization; app icon
 
-[Unreleased]: https://github.com/nlink-jp/zip-porter/compare/v0.5.0...HEAD
+[Unreleased]: https://github.com/nlink-jp/zip-porter/compare/v0.6.0...HEAD
+[v0.6.0]: https://github.com/nlink-jp/zip-porter/compare/v0.5.0...v0.6.0
 [v0.5.0]: https://github.com/nlink-jp/zip-porter/compare/v0.4.1...v0.5.0
 [v0.4.1]: https://github.com/nlink-jp/zip-porter/compare/v0.4.0...v0.4.1
 [v0.4.0]: https://github.com/nlink-jp/zip-porter/compare/v0.3.1...v0.4.0

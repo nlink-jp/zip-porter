@@ -80,6 +80,13 @@ docs/{en,ja}/               RFP (design of record)
   the sequential write phase (per-entry salts), and `ParallelCompressor`
   spills compressed output above 16 MB to scratch files that the writer
   drains and `cleanUp` deletes on every exit path.
+- **Deflate is zlib (CZlib system library), inflate is the Compression
+  framework** (ADR-014). Files ≥ 32 MB compress as ~16 MB blocks in
+  bounded waves: every data block ends with Z_SYNC_FLUSH (no BFINAL), and
+  a trailing empty Z_FINISH block closes the stream — so no EOF lookahead
+  is needed and an exact-multiple-of-blockSize file still ends properly
+  (there is a test). Never "optimize away" that empty final block.
+  Cross-verified against unzip / 7zz / ditto / Python zipfile.
 - **Defaults are modern** (UTF-8+NFC, AES-256); CP932 / ZipCrypto stay
   opt-in flags with warnings.
 - `make build`, never bare `swift build` outputs into the repo root.

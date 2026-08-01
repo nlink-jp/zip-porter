@@ -126,7 +126,7 @@ public enum Packer {
                 && ParallelCompressor.isWorthDeflating(item.url)
         }
         var compressed: [ParallelCompressor.Result?] = []
-        if fileItems.count > 1 {
+        if deflatable.contains(true) {
             compressed = try ParallelCompressor.compress(
                 fileItems.map(\.element.url),
                 deflate: deflatable,

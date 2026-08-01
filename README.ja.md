@@ -112,13 +112,12 @@ zip-porter --version
 
 エントリを並列に圧縮し、書き込みは従来と同じ順序で行うため、出力は
 バイト単位で決定的です。先頭を試し圧縮して効果がないファイルは deflate
-せず store します（速く、わずかに小さくなります）。12 コア機での実測では、
-310MB / 150 ファイルの混合コーパスが 1.72 秒でした（Apple `ditto`: 6.93 秒、
-Info-ZIP `zip -r`: 7.00 秒）。
-
-単一の巨大ファイルは依然として 1 コアで圧縮されます。理由と対策は
-[ADR-013](https://github.com/nlink-jp/.github/blob/main/adr/013-zip-porter-parallel-compression.md)
-を参照してください。
+せず store します。さらに大きなファイルは独立ブロックに分けて並列圧縮
+（zlib、pigz 方式の連結）するため、単一 180MB のファイルも 12 コア機で
+1 秒未満で圧縮できます。310MB / 150 ファイルの混合コーパスは 1.8 秒
+（Apple `ditto` は 6.9 秒）で、出力サイズは同等です。設計の詳細:
+[ADR-013](https://github.com/nlink-jp/.github/blob/main/adr/013-zip-porter-parallel-compression.md)、
+[ADR-014](https://github.com/nlink-jp/.github/blob/main/adr/014-zip-porter-zlib-parallel-deflate.md)。
 
 ### inspect（診断）
 

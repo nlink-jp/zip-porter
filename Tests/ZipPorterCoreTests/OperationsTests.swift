@@ -337,6 +337,70 @@ final class PackerTests: XCTestCase {
         XCTAssertEqual(leftovers, [])
     }
 
+    func testBlockParallelSingleLargeFileRoundTrips() throws {
+        // Force the ADR-014 path with test-sized data: 5 MB across several
+        // sub-blockSize... actually sub-threshold blocks. The joined stream
+        // (sync-flushed blocks + empty final block) must inflate to the
+        // exact original everywhere.
+        let saved = ParallelCompressor.blockParallelThreshold
+        ParallelCompressor.blockParallelThreshold = 1 << 20
+        defer { ParallelCompressor.blockParallelThreshold = saved }
+
+        let big = compressibleData(9, count: 5 << 20)
+        _ = try writeData("d/model.bin", big)
+        let result = try Packer.pack(inputs: [workDir.appendingPathComponent("d")],
+                                     output: workDir.appendingPathComponent("big.zip"))
+        let reader = try ZipReader(url: result.outputURL)
+        let entry = try XCTUnwrap(reader.entries.first { reader.name(of: $0) == "d/model.bin" })
+        XCTAssertEqual(entry.method, .deflate)
+        XCTAssertEqual(try reader.extractData(entry), big,
+                       "block-joined deflate stream must inflate to the original")
+    }
+
+    func testBlockParallelIsDeterministicAndExternalToolsAccept() throws {
+        let saved = ParallelCompressor.blockParallelThreshold
+        ParallelCompressor.blockParallelThreshold = 1 << 20
+        defer { ParallelCompressor.blockParallelThreshold = saved }
+
+        let big = compressibleData(11, count: 4 << 20)
+        _ = try writeData("d/big.txt", big)
+        let a = try Packer.pack(inputs: [workDir.appendingPathComponent("d")],
+                                output: workDir.appendingPathComponent("a.zip"))
+        let b = try Packer.pack(inputs: [workDir.appendingPathComponent("d")],
+                                output: workDir.appendingPathComponent("b.zip"))
+        XCTAssertEqual(try Data(contentsOf: a.outputURL), try Data(contentsOf: b.outputURL))
+
+        let p = Process()
+        p.executableURL = URL(fileURLWithPath: "/usr/bin/unzip")
+        p.arguments = ["-t", a.outputURL.path]
+        let pipe = Pipe()
+        p.standardOutput = pipe
+        p.standardError = pipe
+        try p.run()
+        p.waitUntilExit()
+        let out = String(data: pipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
+        XCTAssertEqual(p.terminationStatus, 0,
+                       "unzip -t must accept the block-joined stream: \(out)")
+    }
+
+    func testBlockParallelExactMultipleOfWaveRoundTrips() throws {
+        // File length an exact multiple of the block size: the trailing
+        // empty Z_FINISH block is the only thing carrying BFINAL.
+        let saved = ParallelCompressor.blockParallelThreshold
+        ParallelCompressor.blockParallelThreshold = 1 << 20
+        defer { ParallelCompressor.blockParallelThreshold = saved }
+
+        var exact = compressibleData(13, count: ParallelCompressor.blockSize)
+        exact.removeSubrange(ParallelCompressor.blockSize..<exact.count)
+        XCTAssertEqual(exact.count, ParallelCompressor.blockSize)
+        _ = try writeData("d/exact.bin", exact)
+        let result = try Packer.pack(inputs: [workDir.appendingPathComponent("d")],
+                                     output: workDir.appendingPathComponent("exact.zip"))
+        let reader = try ZipReader(url: result.outputURL)
+        let entry = try XCTUnwrap(reader.entries.first { reader.name(of: $0) == "d/exact.bin" })
+        XCTAssertEqual(try reader.extractData(entry), exact)
+    }
+
     func testOverwriteReplacesTheChosenPath() throws {
         // The save panel already asked the user about replacing, so the
         // numbered-name policy must step aside for that one path.

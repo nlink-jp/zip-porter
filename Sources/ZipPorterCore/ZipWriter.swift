@@ -379,7 +379,7 @@ public final class ZipWriter {
         }
 
         let deflater = (precompressed == nil && baseMethod == .deflate)
-            ? try DeflateStream(.compress) : nil
+            ? try ZlibDeflateStream() : nil
         let next = try open()
         while let chunk = try next() {
             if precompressed == nil {
