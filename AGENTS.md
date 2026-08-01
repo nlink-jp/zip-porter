@@ -114,6 +114,14 @@ docs/{en,ja}/               RFP (design of record)
   word is a CLI error.
 - The entry point is `@MainActor` (`ZipPorterMain`); AppKit setup calls
   MainActor-isolated code from `main()`.
+- **Never make an NSStackView the window's contentView directly.** It sizes
+  itself to its own fitting width and clips wider subviews (the settings
+  popup vanished off the right edge); `setContentSize` does not override
+  that. Pin the stack inside a plain container with an explicit width
+  constraint instead — see `SettingsWindowController.buildUI`.
+- Borderless buttons in a window with no other focusable view come up
+  wearing a focus ring: set `focusRingType = .none` and
+  `refusesFirstResponder = true` (the drop window's gear button).
 - Signing: pure AppKit needs **no entitlements** (see CONVENTIONS.md).
 - Interactive password E2E uses `/usr/bin/expect` (`script -q` piping
   hangs); see the session E2E notes.
