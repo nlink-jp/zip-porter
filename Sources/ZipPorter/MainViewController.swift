@@ -37,6 +37,23 @@ final class MainViewController: NSViewController, DropViewDelegate {
         version.translatesAutoresizingMaskIntoConstraints = false
         root.addSubview(version)
 
+        // Settings are otherwise only reachable through the menu bar (⌘,) —
+        // easy to miss in a one-window drop app.
+        let settingsButton = NSButton(
+            image: NSImage(systemSymbolName: "gearshape", accessibilityDescription: L("Settings"))
+                ?? NSImage(),
+            target: self, action: #selector(openSettings))
+        settingsButton.bezelStyle = .accessoryBarAction
+        settingsButton.isBordered = false
+        settingsButton.contentTintColor = .secondaryLabelColor
+        settingsButton.toolTip = L("Settings")
+        // Nothing else in the window takes focus, so the button would come
+        // up wearing a focus ring on launch.
+        settingsButton.focusRingType = .none
+        settingsButton.refusesFirstResponder = true
+        settingsButton.translatesAutoresizingMaskIntoConstraints = false
+        root.addSubview(settingsButton)
+
         NSLayoutConstraint.activate([
             dropView.topAnchor.constraint(equalTo: root.topAnchor),
             dropView.leadingAnchor.constraint(equalTo: root.leadingAnchor),
@@ -46,8 +63,14 @@ final class MainViewController: NSViewController, DropViewDelegate {
             hints.centerYAnchor.constraint(equalTo: dropView.centerYAnchor),
             version.trailingAnchor.constraint(equalTo: root.trailingAnchor, constant: -30),
             version.bottomAnchor.constraint(equalTo: root.bottomAnchor, constant: -8),
+            settingsButton.leadingAnchor.constraint(equalTo: root.leadingAnchor, constant: 28),
+            settingsButton.centerYAnchor.constraint(equalTo: version.centerYAnchor),
         ])
         view = root
+    }
+
+    @objc private func openSettings() {
+        SettingsWindowController.shared.show()
     }
 
     private var hostWindow: NSWindow? { view.window }

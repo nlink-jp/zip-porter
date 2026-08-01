@@ -68,38 +68,77 @@ final class SettingsWindowController: NSWindowController {
 
         let destRow = NSStackView(views: [NSTextField(labelWithString: L("Extract to:")), destinationPopup])
         destRow.orientation = .horizontal
+        destRow.spacing = 8
+        destinationPopup.setContentHuggingPriority(.defaultLow, for: .horizontal)
 
         // Radio buttons group by shared superview+action; one stack each.
         let wrapStack = NSStackView(views: [
             wrapRadios[.never]!, wrapRadios[.onlyMultiple]!, wrapRadios[.always]!,
         ])
         let dateStack = NSStackView(views: [dateRadios[.now]!, dateRadios[.archive]!])
-        for stack in [wrapStack, dateStack] {
+        let afterStack = NSStackView(views: [revealCheck, trashCheck])
+        for stack in [wrapStack, dateStack, afterStack] {
             stack.orientation = .vertical
             stack.alignment = .leading
-            stack.spacing = 6
+            stack.spacing = 8
+        }
+
+        // Each labelled group is one indented block, so the settings read as
+        // discrete choices rather than one long ladder of controls.
+        func group(_ title: String, _ content: NSView) -> NSStackView {
+            let indented = NSStackView(views: [content])
+            indented.orientation = .vertical
+            indented.alignment = .leading
+            indented.edgeInsets = NSEdgeInsets(top: 0, left: 18, bottom: 0, right: 0)
+            let group = NSStackView(views: [NSTextField(labelWithString: title), indented])
+            group.orientation = .vertical
+            group.alignment = .leading
+            group.spacing = 8
+            return group
+        }
+
+        let extraction = NSStackView(views: [
+            destRow,
+            group(L("Create a new folder for extracted files:"), wrapStack),
+            group(L("Created folder's modification date:"), dateStack),
+            group(L("After extracting:"), afterStack),
+        ])
+        let creating = NSStackView(views: [showOptionsCheck])
+        for stack in [extraction, creating] {
+            stack.orientation = .vertical
+            stack.alignment = .leading
+            stack.spacing = 18
         }
 
         let stack = NSStackView(views: [
             sectionLabel(L("Extraction")),
-            destRow,
-            NSTextField(labelWithString: L("Create a new folder for extracted files:")),
-            wrapStack,
-            NSTextField(labelWithString: L("Created folder's modification date:")),
-            dateStack,
-            NSTextField(labelWithString: L("After extracting:")),
-            revealCheck,
-            trashCheck,
+            extraction,
             NSBox.separator(),
             sectionLabel(L("Creating")),
-            showOptionsCheck,
+            creating,
         ])
         stack.orientation = .vertical
         stack.alignment = .leading
-        stack.spacing = 10
-        stack.edgeInsets = NSEdgeInsets(top: 20, left: 20, bottom: 20, right: 20)
-        window?.contentView = stack
-        window?.setContentSize(stack.fittingSize)
+        stack.spacing = 16
+        stack.translatesAutoresizingMaskIntoConstraints = false
+
+        // A bare NSStackView as contentView gets sized to its own fitting
+        // width and clips anything wider (the destination popup). Pinning it
+        // inside a container with an explicit width is what actually holds
+        // the window open at a comfortable size.
+        let container = NSView()
+        container.addSubview(stack)
+        let width = container.widthAnchor.constraint(equalToConstant: 480)
+        width.priority = .required
+        NSLayoutConstraint.activate([
+            width,
+            stack.topAnchor.constraint(equalTo: container.topAnchor, constant: 24),
+            stack.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 28),
+            stack.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -28),
+            stack.bottomAnchor.constraint(equalTo: container.bottomAnchor, constant: -28),
+        ])
+        window?.contentView = container
+        window?.setContentSize(container.fittingSize)
     }
 
     private func rebuildDestinationItems(_ prefs: Preferences) {

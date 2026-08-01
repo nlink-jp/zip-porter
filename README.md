@@ -40,7 +40,8 @@ Launch ZipPorter and drop things on the window:
   again"; re-enable in Settings)
 - **Drop a `.zip`** (or double-click one — ZipPorter registers as a ZIP
   handler) → it is extracted. Encrypted archives prompt for the password
-- **Settings (⌘,)** — The Unarchiver-style extraction preferences:
+- **Settings** (the gear in the window, or ⌘,) — The Unarchiver-style
+  extraction preferences:
   destination (same folder / ask every time / a fixed folder), when to
   create a wrapper folder (never / only for multiple top-level items /
   always), the created folder's modification date, reveal-in-Finder, and

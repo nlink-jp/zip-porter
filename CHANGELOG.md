@@ -2,6 +2,16 @@
 
 ## [Unreleased]
 
+## [v0.2.1] - 2026-08-01
+
+### Changed
+
+- Settings window: wider, with each labelled choice indented into its own
+  group and more breathing room between them. It was cramped, and the
+  destination popup was clipped at the window edge
+- The drop window gets a settings button, so preferences are reachable
+  without going through the menu bar
+
 ## [v0.2.0] - 2026-08-01
 
 Extraction hardening ([ADR-012](https://github.com/nlink-jp/.github/blob/main/adr/012-zip-porter-hardening.md)).
@@ -68,6 +78,7 @@ instead of consuming resources or silently losing data.
   reveal in Finder, move archive to Trash
 - en/ja localization; app icon
 
-[Unreleased]: https://github.com/nlink-jp/zip-porter/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/nlink-jp/zip-porter/compare/v0.2.1...HEAD
+[v0.2.1]: https://github.com/nlink-jp/zip-porter/compare/v0.2.0...v0.2.1
 [v0.2.0]: https://github.com/nlink-jp/zip-porter/compare/v0.1.0...v0.2.0
 [v0.1.0]: https://github.com/nlink-jp/zip-porter/releases/tag/v0.1.0
