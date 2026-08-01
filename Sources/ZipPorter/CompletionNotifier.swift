@@ -12,6 +12,19 @@ final class CompletionNotifier: NSObject, UNUserNotificationCenterDelegate {
     /// Runs once the banner is actually on screen (or the wait times out),
     /// so a one-shot launch does not terminate mid-presentation.
     private var pendingCompletion: (@MainActor () -> Void)?
+    /// When the current banner appeared. A one-shot launch waits out the
+    /// remainder of its display before quitting — and only then.
+    private var bannerPresentedAt: Date?
+    /// Roughly how long macOS leaves a banner up.
+    private static let bannerLifetime: TimeInterval = 4.5
+
+    /// Seconds a caller should stay alive so the banner it posted finishes
+    /// its time on screen; zero when no banner was shown (permission
+    /// declined, or the result went to a dialog instead).
+    func remainingBannerTime() -> TimeInterval {
+        guard let bannerPresentedAt else { return 0 }
+        return max(0, Self.bannerLifetime - Date().timeIntervalSince(bannerPresentedAt))
+    }
 
     /// Wire the delegate early — foreground banners depend on it. Safe to
     /// call repeatedly.
@@ -84,6 +97,7 @@ final class CompletionNotifier: NSObject, UNUserNotificationCenterDelegate {
         // completion (which may quit the app) runs.
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
             MainActor.assumeIsolated {
+                CompletionNotifier.shared.bannerPresentedAt = Date()
                 CompletionNotifier.shared.runPendingCompletion()
             }
         }

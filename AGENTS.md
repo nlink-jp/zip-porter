@@ -150,8 +150,16 @@ docs/{en,ja}/               RFP (design of record)
   the droplet UI the mode exists to avoid.
 - **A foreground notification dies with its app.** Terminating right after
   posting cuts the banner short (v0.8.0/v0.8.1). The one-shot path drops to
-  `.accessory` so the Dock icon goes away at once, then terminates after a
-  few seconds — keep that delay if you touch the quit path.
+  `.accessory` so the Dock icon goes away at once, then terminates after
+  `CompletionNotifier.remainingBannerTime()` — which is zero when no banner
+  was shown, so the dialog path still quits at once. Keep that gating if
+  you touch the quit path.
+- **The app claims only `public.zip-archive`**, so one-shot *packing* is
+  effectively unreachable from Finder (folders never launch an app; the
+  icon rejects undeclared types). It survives for `open -a` and scripts.
+  Declaring `public.folder`/`public.item` would enable Dock-icon packing at
+  the cost of appearing in every file's "Open With" menu — considered and
+  declined 2026-08-01.
 - **Never gate a notification on a cached authorization flag.**
   `requestAuthorization` is async; an operation that finishes first then
   skips its banner silently (this shipped in v0.8.0). Resolve

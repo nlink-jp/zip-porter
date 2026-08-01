@@ -73,12 +73,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         CompletionNotifier.shared.prepare()
         mainViewController.workDidFinish = { [weak self] in
             guard let self, self.isOneShotLaunch else { return }
-            // Quitting immediately cuts the completion banner short — a
-            // foreground notification lives only as long as its app. Drop
-            // out of the Dock right away so nothing lingers visually, then
-            // exit once the banner has had its normal time on screen.
+            // A foreground notification lives only as long as its app, so
+            // quitting straight away cuts the banner short. Wait out just
+            // the banner's remaining time — and nothing at all when no
+            // banner was shown (the result went to a dialog the user has
+            // already dismissed, or notifications are off).
+            let wait = CompletionNotifier.shared.remainingBannerTime()
+            guard wait > 0 else {
+                NSApp.terminate(nil)
+                return
+            }
+            // Leave the Dock immediately so nothing lingers visually.
             NSApp.setActivationPolicy(.accessory)
-            DispatchQueue.main.asyncAfter(deadline: .now() + 5) {
+            DispatchQueue.main.asyncAfter(deadline: .now() + wait) {
                 NSApp.terminate(nil)
             }
         }

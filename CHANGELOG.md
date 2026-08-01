@@ -2,6 +2,15 @@
 
 ## [Unreleased]
 
+## [v0.8.3] - 2026-08-01
+
+### Fixed
+
+- A Finder-launched run waited out the banner's display time even when no
+  banner was shown — after a result dialog the user had already dismissed,
+  or when notifications are off. It now waits only for a banner actually on
+  screen, and quits immediately otherwise
+
 ## [v0.8.2] - 2026-08-01
 
 ### Fixed
@@ -241,7 +250,8 @@ instead of consuming resources or silently losing data.
   reveal in Finder, move archive to Trash
 - en/ja localization; app icon
 
-[Unreleased]: https://github.com/nlink-jp/zip-porter/compare/v0.8.2...HEAD
+[Unreleased]: https://github.com/nlink-jp/zip-porter/compare/v0.8.3...HEAD
+[v0.8.3]: https://github.com/nlink-jp/zip-porter/compare/v0.8.2...v0.8.3
 [v0.8.2]: https://github.com/nlink-jp/zip-porter/compare/v0.8.1...v0.8.2
 [v0.8.1]: https://github.com/nlink-jp/zip-porter/compare/v0.8.0...v0.8.1
 [v0.8.0]: https://github.com/nlink-jp/zip-porter/compare/v0.7.0...v0.8.0
