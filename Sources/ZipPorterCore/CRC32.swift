@@ -2,7 +2,8 @@ import Foundation
 
 /// Streaming CRC-32 (IEEE 802.3, the ZIP/zlib polynomial 0xEDB88320).
 public struct CRC32: Sendable {
-    private static let table: [UInt32] = {
+    /// Internal: ZipCryptoCipher's key schedule reuses this table.
+    static let table: [UInt32] = {
         (0..<256).map { i -> UInt32 in
             var c = UInt32(i)
             for _ in 0..<8 {

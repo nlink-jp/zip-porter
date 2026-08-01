@@ -20,7 +20,8 @@ let package = Package(
         .testTarget(
             name: "ZipPorterCoreTests",
             dependencies: ["ZipPorterCore"],
-            path: "Tests/ZipPorterCoreTests"
+            path: "Tests/ZipPorterCoreTests",
+            resources: [.copy("testdata")]
         ),
         .testTarget(
             name: "ZipPorterTests",
