@@ -1,5 +1,17 @@
 import Foundation
 
+/// Byte-based progress for pack/unpack, so a UI can draw a real bar
+/// instead of an indeterminate spinner.
+public struct OperationProgress: Sendable {
+    public var currentPath: String
+    public var processedBytes: UInt64
+    public var totalBytes: UInt64
+
+    public var fraction: Double {
+        totalBytes == 0 ? 0 : min(1, Double(processedBytes) / Double(totalBytes))
+    }
+}
+
 public enum PathUtil {
     /// "name" → "name 2", "name 3", … with the number before the extension
     /// ("report.zip" → "report 2.zip") — Archive Utility's collision style.

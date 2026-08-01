@@ -276,7 +276,12 @@ final class OperationSheet: NSObject {
         detailLabel.cell?.wraps = true
         detailLabel.isHidden = true
         indicator.style = .bar
-        indicator.isIndeterminate = true
+        // Byte-based totals are known up front, so the bar is determinate —
+        // an indeterminate barber pole tells the user nothing.
+        indicator.isIndeterminate = false
+        indicator.minValue = 0
+        indicator.maxValue = 1
+        indicator.doubleValue = 0
         indicator.widthAnchor.constraint(equalToConstant: Self.contentWidth).isActive = true
 
         cancelButton.title = L("Cancel")
@@ -314,7 +319,6 @@ final class OperationSheet: NSObject {
         // carries the operation state, so the bar just names the app.
         sheet.title = "ZipPorter"
         DialogPresenter.present(sheet, on: window)
-        indicator.startAnimation(nil)
     }
 
     /// Live status line: the entry currently being processed.
@@ -322,10 +326,14 @@ final class OperationSheet: NSObject {
         statusLabel.stringValue = text
     }
 
+    /// Move the determinate bar; `fraction` is 0…1.
+    func setFraction(_ fraction: Double) {
+        indicator.doubleValue = max(indicator.doubleValue, min(1, fraction))
+    }
+
     /// Switch to the result state. The sheet stays up until the user
     /// dismisses it, then `completion` runs.
     func finish(title: String, summary: String, notes: [String], completion: @escaping () -> Void) {
-        indicator.stopAnimation(nil)
         indicator.isHidden = true
         cancelButton.isHidden = true
         doneButton.isHidden = false
@@ -347,7 +355,6 @@ final class OperationSheet: NSObject {
 
     /// Close without a result (cancelled, or an error alert takes over).
     func dismiss() {
-        indicator.stopAnimation(nil)
         DialogPresenter.dismiss(sheet)
         let completion = dismissal
         dismissal = nil

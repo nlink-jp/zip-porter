@@ -2,6 +2,22 @@
 
 ## [Unreleased]
 
+## [v0.7.0] - 2026-08-01
+
+### Changed
+
+- **The progress bar is now a real bar.** Pack and extract report
+  byte-based progress against totals known up front (input sizes when
+  packing, the central directory's declared total when extracting), so the
+  dialog shows an accurate fraction instead of an indeterminate barber
+  pole. Progress callbacks are delivered serially; the GUI coalesces them
+  so the bar repaints only on visible movement
+- **A ZIP being created is no longer named `.zip` until it is finished.**
+  The archive is written as `name.zip.part` and renamed on success, so a
+  half-written file is never mistaken for a finished archive (by Finder,
+  a sync client, or a person); failures and cancellations delete the
+  `.part` file
+
 ## [v0.6.0] - 2026-08-01
 
 Single-file parallel deflate on zlib ([ADR-014](https://github.com/nlink-jp/.github/blob/main/adr/014-zip-porter-zlib-parallel-deflate.md)).
@@ -187,7 +203,8 @@ instead of consuming resources or silently losing data.
   reveal in Finder, move archive to Trash
 - en/ja localization; app icon
 
-[Unreleased]: https://github.com/nlink-jp/zip-porter/compare/v0.6.0...HEAD
+[Unreleased]: https://github.com/nlink-jp/zip-porter/compare/v0.7.0...HEAD
+[v0.7.0]: https://github.com/nlink-jp/zip-porter/compare/v0.6.0...v0.7.0
 [v0.6.0]: https://github.com/nlink-jp/zip-porter/compare/v0.5.0...v0.6.0
 [v0.5.0]: https://github.com/nlink-jp/zip-porter/compare/v0.4.1...v0.5.0
 [v0.4.1]: https://github.com/nlink-jp/zip-porter/compare/v0.4.0...v0.4.1

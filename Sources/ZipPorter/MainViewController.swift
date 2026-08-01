@@ -1,6 +1,38 @@
 import AppKit
 import ZipPorterCore
 
+
+/// Coalesces high-frequency byte progress onto the main thread: a UI
+/// update fires only when the fraction moved visibly.
+private final class ProgressForwarder: @unchecked Sendable {
+    private let lock = NSLock()
+    private var lastFraction = -1.0
+    private var lastPath = ""
+    private let apply: @MainActor (Double, String?) -> Void
+
+    init(apply: @escaping @MainActor (Double, String?) -> Void) {
+        self.apply = apply
+    }
+
+    func forward(_ progress: OperationProgress) {
+        lock.lock()
+        let pathChanged = !progress.currentPath.isEmpty && progress.currentPath != lastPath
+        let fractionMoved = progress.fraction - lastFraction >= 0.005 || progress.fraction >= 1
+        guard pathChanged || fractionMoved else {
+            lock.unlock()
+            return
+        }
+        lastFraction = progress.fraction
+        if pathChanged { lastPath = progress.currentPath }
+        let path = pathChanged ? progress.currentPath : nil
+        let fraction = progress.fraction
+        lock.unlock()
+        DispatchQueue.main.async { [apply] in
+            MainActor.assumeIsolated { apply(fraction, path) }
+        }
+    }
+}
+
 /// The drop window's content and the pack/unpack flows.
 @MainActor
 final class MainViewController: NSViewController, DropViewDelegate {
@@ -220,13 +252,15 @@ final class MainViewController: NSViewController, DropViewDelegate {
         let sheet = OperationSheet(title: L("Packing…"))
         sheet.begin(on: hostWindow)
         let flag = sheet.flag
+        let forwarder = ProgressForwarder { fraction, path in
+            sheet.setFraction(fraction)
+            if let path { sheet.update(path) }
+        }
         DispatchQueue.global(qos: .userInitiated).async {
             do {
                 let result = try Packer.pack(
                     inputs: urls, output: output, options: options,
-                    progress: { name in
-                        DispatchQueue.main.async { sheet.update(name) }
-                    },
+                    progress: { forwarder.forward($0) },
                     shouldCancel: { flag.isCancelled })
                 DispatchQueue.main.async {
                     var notes: [String] = []
@@ -337,13 +371,15 @@ final class MainViewController: NSViewController, DropViewDelegate {
         let sheet = OperationSheet(title: L("Extracting…"))
         sheet.begin(on: hostWindow)
         let flag = sheet.flag
+        let forwarder = ProgressForwarder { fraction, path in
+            sheet.setFraction(fraction)
+            if let path { sheet.update(path) }
+        }
         DispatchQueue.global(qos: .userInitiated).async {
             do {
                 let result = try Unpacker.unpack(
                     zipURL: zip, options: options,
-                    progress: { name in
-                        DispatchQueue.main.async { sheet.update(name) }
-                    },
+                    progress: { forwarder.forward($0) },
                     shouldCancel: { flag.isCancelled })
                 DispatchQueue.main.async {
                     sheet.finish(

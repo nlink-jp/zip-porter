@@ -93,12 +93,13 @@ public enum Unpacker {
         return components.isEmpty ? nil : components
     }
 
-    /// `progress` receives each entry name as work starts on it;
+    /// `progress` carries the current entry and byte counts (totals come
+    /// from the central directory, so the fraction is exact);
     /// `shouldCancel` is polled between entries — on cancellation the
     /// half-written tree is removed and `CancellationError` is thrown.
     public static func unpack(zipURL: URL,
                               options: Options = Options(),
-                              progress: ((String) -> Void)? = nil,
+                              progress: ((OperationProgress) -> Void)? = nil,
                               shouldCancel: (() -> Bool)? = nil) throws -> Result {
         let reader = try ZipReader(url: zipURL)
         let destBase = options.destination ?? zipURL.deletingLastPathComponent()
@@ -219,6 +220,8 @@ public enum Unpacker {
 
         var files = 0
         var directories = 0
+        let totalBytes = reader.declaredTotalSize
+        var processedBytes: UInt64 = 0
         // Downloaded archives carry com.apple.quarantine; everything we
         // write from them must carry it too, or Gatekeeper never sees the
         // contents (ADR-012 §4).
@@ -231,7 +234,10 @@ public enum Unpacker {
             for (entry, rawComponents) in work {
                 if shouldCancel?() == true { throw CancellationError() }
                 var components = rawComponents
-                progress?(rawComponents.joined(separator: "/"))
+                let entryPath = rawComponents.joined(separator: "/")
+                progress?(OperationProgress(currentPath: entryPath,
+                                            processedBytes: processedBytes,
+                                            totalBytes: totalBytes))
                 if let renamed = renames[components[0]] {
                     components[0] = renamed
                 }
@@ -248,6 +254,10 @@ public enum Unpacker {
                     do {
                         try reader.extract(entry, password: options.password) { chunk in
                             try out.write(contentsOf: chunk)
+                            processedBytes &+= UInt64(chunk.count)
+                            progress?(OperationProgress(currentPath: entryPath,
+                                                        processedBytes: processedBytes,
+                                                        totalBytes: totalBytes))
                         }
                         try out.close()
                     } catch {

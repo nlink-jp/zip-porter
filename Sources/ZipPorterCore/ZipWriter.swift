@@ -102,12 +102,13 @@ public final class ZipWriter {
     /// probe already found incompressible (ADR-013).
     public func addFile(_ name: String, fileURL: URL,
                         modificationDate: Date? = nil,
-                        forceStore: Bool = false) throws {
+                        forceStore: Bool = false,
+                        onBytes: ((Int) -> Void)? = nil) throws {
         let attrs = try FileManager.default.attributesOfItem(atPath: fileURL.path)
         let size = (attrs[.size] as? NSNumber)?.uint64Value ?? 0
         let mtime = modificationDate ?? (attrs[.modificationDate] as? Date) ?? Date()
         try addEntry(name: name, isDirectory: false, modificationDate: mtime,
-                     size: size, forceStore: forceStore, open: {
+                     size: size, forceStore: forceStore, onBytes: onBytes, open: {
             let fh = try FileHandle(forReadingFrom: fileURL)
             return {
                 let chunk = try fh.read(upToCount: Self.chunkSize)
@@ -271,6 +272,7 @@ public final class ZipWriter {
                           size: UInt64,
                           precompressed: Precompressed? = nil,
                           forceStore: Bool = false,
+                          onBytes: ((Int) -> Void)? = nil,
                           open: () throws -> (() throws -> Data?)) throws {
         precondition(!finalized, "addEntry after finalize()")
         let (nameBytes, nameFlags) = try encodeName(name)
@@ -385,6 +387,7 @@ public final class ZipWriter {
             if precompressed == nil {
                 crc.update(chunk)
                 uncompressed += UInt64(chunk.count)
+                onBytes?(chunk.count)
             }
             if let deflater {
                 try deflater.process(chunk, final: false, sink: emit)

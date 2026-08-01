@@ -78,7 +78,7 @@ enum ParallelCompressor {
     static func compress(_ urls: [URL],
                          deflate: [Bool],
                          scratchDirectory: URL,
-                         progress: ((Int) -> Void)? = nil,
+                         onBytes: ((UInt64) -> Void)? = nil,
                          shouldCancel: (() -> Bool)? = nil) throws -> [Result?] {
         precondition(urls.count == deflate.count)
         var results = [Result?](repeating: nil, count: urls.count)
@@ -112,11 +112,11 @@ enum ParallelCompressor {
             do {
                 let result = try compressOne(urls[index],
                                              scratchDirectory: scratchDirectory,
-                                             index: index)
+                                             index: index,
+                                             onBytes: onBytes)
                 lock.lock()
                 results[index] = result
                 lock.unlock()
-                progress?(index)
             } catch {
                 lock.lock()
                 if failure == nil { failure = error }
@@ -131,8 +131,8 @@ enum ParallelCompressor {
                     results[index] = try compressLarge(urls[index],
                                                        scratchDirectory: scratchDirectory,
                                                        index: index,
+                                                       onBytes: onBytes,
                                                        shouldCancel: shouldCancel)
-                    progress?(index)
                 } catch {
                     failure = error
                     break
@@ -164,6 +164,7 @@ enum ParallelCompressor {
     private static func compressLarge(_ url: URL,
                                       scratchDirectory: URL,
                                       index: Int,
+                                      onBytes: ((UInt64) -> Void)?,
                                       shouldCancel: (() -> Bool)?) throws -> Result {
         let input = try FileHandle(forReadingFrom: url)
         defer { try? input.close() }
@@ -182,6 +183,7 @@ enum ParallelCompressor {
                   let chunk = try input.read(upToCount: blockSize), !chunk.isEmpty {
                 crc = ZlibDeflate.crc32(crc, chunk)
                 uncompressed += UInt64(chunk.count)
+                onBytes?(UInt64(chunk.count))
                 wave.append(chunk)
             }
             guard !wave.isEmpty else { break }
@@ -217,7 +219,8 @@ enum ParallelCompressor {
 
     private static func compressOne(_ url: URL,
                                     scratchDirectory: URL,
-                                    index: Int) throws -> Result {
+                                    index: Int,
+                                    onBytes: ((UInt64) -> Void)?) throws -> Result {
         let input = try FileHandle(forReadingFrom: url)
         defer { try? input.close() }
         let deflater = try ZlibDeflateStream()
@@ -229,6 +232,7 @@ enum ParallelCompressor {
             while let chunk = try input.read(upToCount: chunkSize), !chunk.isEmpty {
                 crc = ZlibDeflate.crc32(crc, chunk)
                 uncompressed += UInt64(chunk.count)
+                onBytes?(UInt64(chunk.count))
                 try deflater.process(chunk, final: false) { try sink.emit($0) }
             }
             try deflater.process(Data(), final: true) { try sink.emit($0) }

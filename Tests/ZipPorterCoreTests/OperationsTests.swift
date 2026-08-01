@@ -401,6 +401,67 @@ final class PackerTests: XCTestCase {
         XCTAssertEqual(try reader.extractData(entry), exact)
     }
 
+    func testProgressReachesTotalAndIsMonotonic() throws {
+        for i in 0..<10 {
+            _ = try writeData("d/f\(i).txt", compressibleData(i, count: 50_000))
+        }
+        var random = SystemRandomNumberGenerator()
+        _ = try writeData("d/noise.bin",
+                          Data((0..<300_000).map { _ in UInt8.random(in: 0...255, using: &random) }))
+        var seen: [OperationProgress] = []
+        _ = try Packer.pack(inputs: [workDir.appendingPathComponent("d")],
+                            output: workDir.appendingPathComponent("p.zip"),
+                            progress: { seen.append($0) })
+        let last = try XCTUnwrap(seen.last)
+        XCTAssertEqual(last.processedBytes, last.totalBytes,
+                       "all bytes must be accounted for (deflated and stored alike)")
+        XCTAssertGreaterThan(last.totalBytes, 0)
+        for pair in zip(seen, seen.dropFirst()) {
+            XCTAssertLessThanOrEqual(pair.0.processedBytes, pair.1.processedBytes,
+                                     "progress must never move backwards")
+        }
+    }
+
+    func testUnpackProgressReachesDeclaredTotal() throws {
+        for i in 0..<5 {
+            _ = try writeData("d/f\(i).txt", compressibleData(i, count: 30_000))
+        }
+        let packed = try Packer.pack(inputs: [workDir.appendingPathComponent("d")],
+                                     output: workDir.appendingPathComponent("p.zip"))
+        var last: OperationProgress?
+        var unpackOptions = Unpacker.Options()
+        unpackOptions.destination = workDir.appendingPathComponent("out")
+        _ = try Unpacker.unpack(zipURL: packed.outputURL, options: unpackOptions,
+                                progress: { last = $0 })
+        let final = try XCTUnwrap(last)
+        XCTAssertEqual(final.processedBytes, final.totalBytes)
+        // compressibleData generates at least `count` bytes per file.
+        XCTAssertGreaterThanOrEqual(final.totalBytes, UInt64(5 * 30_000))
+    }
+
+    func testPartFileNeverSurvivesSuccessOrFailure() throws {
+        _ = try write("d/a.txt", "A")
+        let out = workDir.appendingPathComponent("out.zip")
+        _ = try Packer.pack(inputs: [workDir.appendingPathComponent("d")], output: out)
+        var names = try FileManager.default.contentsOfDirectory(atPath: workDir.path)
+        XCTAssertTrue(names.contains("out.zip"))
+        XCTAssertFalse(names.contains { $0.hasSuffix(".part") },
+                       "the temporary name must be renamed away on success")
+
+        // Cancellation: the .part must be cleaned up and no .zip appear.
+        _ = try write("e/b.txt", "B")
+        _ = try write("e/c.txt", "C")
+        var calls = 0
+        XCTAssertThrowsError(try Packer.pack(
+            inputs: [workDir.appendingPathComponent("e")],
+            output: workDir.appendingPathComponent("cancelled.zip"),
+            shouldCancel: { calls += 1; return calls > 1 }))
+        names = try FileManager.default.contentsOfDirectory(atPath: workDir.path)
+        XCTAssertFalse(names.contains("cancelled.zip"))
+        XCTAssertFalse(names.contains { $0.hasSuffix(".part") },
+                       "a failed pack must remove its temporary file")
+    }
+
     func testOverwriteReplacesTheChosenPath() throws {
         // The save panel already asked the user about replacing, so the
         // numbered-name policy must step aside for that one path.

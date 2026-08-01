@@ -33,13 +33,15 @@ public enum Packer {
     /// Pack `inputs` (files and/or directories, all placed at the archive
     /// root) into `output` — or the uniquified variant of it.
     ///
-    /// `progress` receives each archive path as work starts on it;
-    /// `shouldCancel` is polled between entries — when it returns true the
-    /// partial archive is removed and `CancellationError` is thrown.
+    /// `progress` carries the current path and byte counts, so a UI can
+    /// draw a real bar; `shouldCancel` is polled between entries — when it
+    /// returns true the partial archive is removed and `CancellationError`
+    /// is thrown. The archive is written under a temporary ".part" name and
+    /// only renamed to the final one on success.
     public static func pack(inputs: [URL],
                             output: URL,
                             options: Options = Options(),
-                            progress: ((String) -> Void)? = nil,
+                            progress: ((OperationProgress) -> Void)? = nil,
                             shouldCancel: (() -> Bool)? = nil) throws -> Result {
         // Collect (archivePath, fileURL?, isDirectory) first so entries are
         // sorted and junk/symlinks decided before any byte is written.
@@ -107,12 +109,35 @@ public enum Packer {
         guard !items.isEmpty else { throw Failure.nothingToPack }
         items.sort { $0.archivePath < $1.archivePath }
 
-        let actualOutput: URL
-        if options.overwrite {
-            try? fm.removeItem(at: output)
-            actualOutput = output
-        } else {
-            actualOutput = PathUtil.uniqueURL(output)
+        let actualOutput = options.overwrite ? output : PathUtil.uniqueURL(output)
+        // The archive materializes under a ".part" name so a half-written
+        // file is never mistaken for a finished ZIP; the rename happens
+        // after finalize() succeeds.
+        let tempOutput = PathUtil.uniqueURL(actualOutput.appendingPathExtension("part"))
+
+        // Byte-based progress: totals are known up front.
+        var fileSizes: [Int: UInt64] = [:]
+        for (index, item) in items.enumerated() where !item.isDirectory {
+            fileSizes[index] = (try? fm.attributesOfItem(atPath: item.url.path)[.size]
+                as? NSNumber)?.uint64Value ?? 0
+        }
+        let totalBytes = fileSizes.values.reduce(0, +)
+        let progressLock = NSLock()
+        var processedBytes: UInt64 = 0
+        var currentPath = ""
+        func report(_ path: String?, adding bytes: UInt64) {
+            guard let progress else { return }
+            progressLock.lock()
+            defer { progressLock.unlock() }
+            processedBytes &+= bytes
+            if let path { currentPath = path }
+            // Invoked under the lock so callers receive callbacks serially —
+            // compression workers report from their own threads, and a
+            // non-thread-safe observer (a test collecting into an array)
+            // must not need its own synchronization.
+            progress(OperationProgress(currentPath: currentPath,
+                                       processedBytes: processedBytes,
+                                       totalBytes: totalBytes))
         }
         var writerOptions = ZipWriter.Options()
         writerOptions.nameEncoding = options.nameEncoding
@@ -131,6 +156,7 @@ public enum Packer {
                 fileItems.map(\.element.url),
                 deflate: deflatable,
                 scratchDirectory: actualOutput.deletingLastPathComponent(),
+                onBytes: { report(nil, adding: $0) },
                 shouldCancel: shouldCancel)
         }
         defer { ParallelCompressor.cleanUp(compressed) }
@@ -139,13 +165,13 @@ public enum Packer {
             if let result = compressed[slot] { precompressed[index] = result }
         }
 
-        let writer = try ZipWriter(url: actualOutput, options: writerOptions)
+        let writer = try ZipWriter(url: tempOutput, options: writerOptions)
         var files = 0
         var directories = 0
         do {
             for (index, item) in items.enumerated() {
                 if shouldCancel?() == true { throw CancellationError() }
-                progress?(item.archivePath)
+                report(item.archivePath, adding: 0)
                 if item.isDirectory {
                     try writer.addDirectory(item.archivePath, modificationDate: modificationDate(of: item.url))
                     directories += 1
@@ -160,14 +186,21 @@ public enum Packer {
                         open: ready.open)
                     files += 1
                 } else {
+                    // Stored entries stream through the writer; their bytes
+                    // were not counted by the compression phase.
                     try writer.addFile(item.archivePath, fileURL: item.url,
-                                       forceStore: true)
+                                       forceStore: true,
+                                       onBytes: { report(nil, adding: UInt64($0)) })
                     files += 1
                 }
             }
             try writer.finalize()
+            if options.overwrite {
+                try? fm.removeItem(at: actualOutput)
+            }
+            try fm.moveItem(at: tempOutput, to: actualOutput)
         } catch {
-            try? fm.removeItem(at: actualOutput)
+            try? fm.removeItem(at: tempOutput)
             throw error
         }
 
