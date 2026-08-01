@@ -13,6 +13,7 @@ final class SettingsWindowController: NSWindowController {
     private let revealCheck = NSButton(checkboxWithTitle: L("Reveal extracted items in Finder"), target: nil, action: nil)
     private let trashCheck = NSButton(checkboxWithTitle: L("Move the archive to the Trash"), target: nil, action: nil)
     private let showOptionsCheck = NSButton(checkboxWithTitle: L("Show Options When Creating a ZIP"), target: nil, action: nil)
+    private let revealCreatedCheck = NSButton(checkboxWithTitle: L("Reveal the created archive in Finder"), target: nil, action: nil)
 
     private init() {
         let window = NSWindow(
@@ -61,7 +62,7 @@ final class SettingsWindowController: NSWindowController {
             .now: radio(L("Current date and time")),
             .archive: radio(L("The archive file's modification date")),
         ]
-        for check in [revealCheck, trashCheck, showOptionsCheck] {
+        for check in [revealCheck, trashCheck, showOptionsCheck, revealCreatedCheck] {
             check.target = self
             check.action = #selector(checkboxChanged)
         }
@@ -103,7 +104,11 @@ final class SettingsWindowController: NSWindowController {
             group(L("Created folder's modification date:"), dateStack),
             group(L("After extracting:"), afterStack),
         ])
-        let creating = NSStackView(views: [showOptionsCheck])
+        let creatingChecks = NSStackView(views: [showOptionsCheck, revealCreatedCheck])
+        creatingChecks.orientation = .vertical
+        creatingChecks.alignment = .leading
+        creatingChecks.spacing = 8
+        let creating = NSStackView(views: [creatingChecks])
         for stack in [extraction, creating] {
             stack.orientation = .vertical
             stack.alignment = .leading
@@ -168,6 +173,7 @@ final class SettingsWindowController: NSWindowController {
         revealCheck.state = prefs.revealInFinder ? .on : .off
         trashCheck.state = prefs.trashArchiveAfterExtract ? .on : .off
         showOptionsCheck.state = prefs.skipOptions ? .off : .on
+        revealCreatedCheck.state = prefs.revealCreatedArchive ? .on : .off
     }
 
     // MARK: - Actions
@@ -210,6 +216,7 @@ final class SettingsWindowController: NSWindowController {
         case revealCheck: prefs.revealInFinder = sender.state == .on
         case trashCheck: prefs.trashArchiveAfterExtract = sender.state == .on
         case showOptionsCheck: prefs.skipOptions = sender.state == .off
+        case revealCreatedCheck: prefs.revealCreatedArchive = sender.state == .on
         default: break
         }
         prefs.save()

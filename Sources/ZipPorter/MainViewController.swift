@@ -171,7 +171,9 @@ final class MainViewController: NSViewController, DropViewDelegate {
                     shouldCancel: { flag.isCancelled })
                 DispatchQueue.main.async {
                     progress.end()
-                    NSWorkspace.shared.activateFileViewerSelecting([result.outputURL])
+                    if Preferences.load().revealCreatedArchive {
+                        NSWorkspace.shared.activateFileViewerSelecting([result.outputURL])
+                    }
                     self.busy = false
                 }
             } catch is CancellationError {

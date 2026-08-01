@@ -61,3 +61,4 @@
 "Skipped symbolic links:" = "シンボリックリンクをスキップしました:";
 "Duplicate names were extracted under new names:" = "重複する名前は別名で展開しました:";
 "Extracted with changes" = "一部を変更して展開しました";
+"Reveal the created archive in Finder" = "作成したアーカイブを Finder に表示";

@@ -11,6 +11,7 @@ struct Preferences {
     /// When true (and no password is requested), drops pack immediately
     /// without showing the options sheet.
     var skipOptions = false
+    var revealCreatedArchive = true
 
     // MARK: Extraction (The Unarchiver-style)
     enum DestinationMode: String {
@@ -50,6 +51,7 @@ struct Preferences {
         static let cp932 = "pack.cp932"
         static let zipCrypto = "pack.zipCrypto"
         static let skipOptions = "pack.skipOptions"
+        static let revealCreated = "pack.revealCreated"
         static let destinationMode = "unpack.destinationMode"
         static let fixedDestination = "unpack.fixedDestination"
         static let wrapMode = "unpack.wrapMode"
@@ -64,6 +66,9 @@ struct Preferences {
         p.cp932 = defaults.bool(forKey: Key.cp932)
         p.zipCrypto = defaults.bool(forKey: Key.zipCrypto)
         p.skipOptions = defaults.bool(forKey: Key.skipOptions)
+        p.revealCreatedArchive = defaults.object(forKey: Key.revealCreated) == nil
+            ? true
+            : defaults.bool(forKey: Key.revealCreated)
         p.destinationMode = (defaults.string(forKey: Key.destinationMode)
             .flatMap(DestinationMode.init(rawValue:))) ?? .sameFolder
         p.fixedDestinationPath = defaults.string(forKey: Key.fixedDestination)
@@ -92,6 +97,7 @@ struct Preferences {
         defaults.set(cp932, forKey: Key.cp932)
         defaults.set(zipCrypto, forKey: Key.zipCrypto)
         defaults.set(skipOptions, forKey: Key.skipOptions)
+        defaults.set(revealCreatedArchive, forKey: Key.revealCreated)
         defaults.set(destinationMode.rawValue, forKey: Key.destinationMode)
         defaults.set(fixedDestinationPath, forKey: Key.fixedDestination)
         defaults.set(wrapMode.rawValue, forKey: Key.wrapMode)

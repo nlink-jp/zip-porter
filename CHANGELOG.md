@@ -2,6 +2,14 @@
 
 ## [Unreleased]
 
+## [v0.2.2] - 2026-08-01
+
+### Added
+
+- Settings: "Reveal the created archive in Finder" — creating a ZIP always
+  jumped to Finder, while extraction had a toggle for it. Now both do
+  (on by default, matching the previous behavior)
+
 ## [v0.2.1] - 2026-08-01
 
 ### Changed
@@ -78,7 +86,8 @@ instead of consuming resources or silently losing data.
   reveal in Finder, move archive to Trash
 - en/ja localization; app icon
 
-[Unreleased]: https://github.com/nlink-jp/zip-porter/compare/v0.2.1...HEAD
+[Unreleased]: https://github.com/nlink-jp/zip-porter/compare/v0.2.2...HEAD
+[v0.2.2]: https://github.com/nlink-jp/zip-porter/compare/v0.2.1...v0.2.2
 [v0.2.1]: https://github.com/nlink-jp/zip-porter/compare/v0.2.0...v0.2.1
 [v0.2.0]: https://github.com/nlink-jp/zip-porter/compare/v0.1.0...v0.2.0
 [v0.1.0]: https://github.com/nlink-jp/zip-porter/releases/tag/v0.1.0
