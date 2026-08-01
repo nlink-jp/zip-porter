@@ -98,13 +98,16 @@ public final class ZipWriter {
     }
 
     /// Add a file from disk (streamed; the source may be read twice for
-    /// ZipCrypto's CRC pre-pass).
-    public func addFile(_ name: String, fileURL: URL, modificationDate: Date? = nil) throws {
+    /// ZipCrypto's CRC pre-pass). `forceStore` skips deflate for data a
+    /// probe already found incompressible (ADR-013).
+    public func addFile(_ name: String, fileURL: URL,
+                        modificationDate: Date? = nil,
+                        forceStore: Bool = false) throws {
         let attrs = try FileManager.default.attributesOfItem(atPath: fileURL.path)
         let size = (attrs[.size] as? NSNumber)?.uint64Value ?? 0
         let mtime = modificationDate ?? (attrs[.modificationDate] as? Date) ?? Date()
         try addEntry(name: name, isDirectory: false, modificationDate: mtime,
-                     size: size, open: {
+                     size: size, forceStore: forceStore, open: {
             let fh = try FileHandle(forReadingFrom: fileURL)
             return {
                 let chunk = try fh.read(upToCount: Self.chunkSize)
@@ -115,6 +118,20 @@ public final class ZipWriter {
                 return chunk
             }
         })
+    }
+
+    /// Add an entry whose compressed bytes are supplied by the caller —
+    /// the output of the parallel compressor. `next` yields those bytes.
+    func addPrecompressed(_ name: String,
+                          precompressed: Precompressed,
+                          modificationDate: Date,
+                          open: @escaping () throws -> (() throws -> Data?)) throws {
+        try addEntry(name: name,
+                     isDirectory: false,
+                     modificationDate: modificationDate,
+                     size: precompressed.uncompressedSize,
+                     precompressed: precompressed,
+                     open: open)
     }
 
     /// Write the central directory and end record. Must be called last.
@@ -235,12 +252,25 @@ public final class ZipWriter {
         return Data(bytes)
     }
 
+    /// An entry whose bytes were already compressed elsewhere — by the
+    /// parallel compressor (ADR-013). The writer then only has to encrypt
+    /// and frame them.
+    struct Precompressed {
+        var method: Zip.Method
+        var crc32: UInt32
+        var uncompressedSize: UInt64
+    }
+
     /// `open` returns a fresh chunk iterator over the source (re-openable —
-    /// ZipCrypto needs a CRC pre-pass over the plaintext).
+    /// ZipCrypto needs a CRC pre-pass over the plaintext). With
+    /// `precompressed`, the iterator yields compressed bytes instead and
+    /// the sizes/CRC come from the caller.
     private func addEntry(name: String,
                           isDirectory: Bool,
                           modificationDate: Date,
                           size: UInt64,
+                          precompressed: Precompressed? = nil,
+                          forceStore: Bool = false,
                           open: () throws -> (() throws -> Data?)) throws {
         precondition(!finalized, "addEntry after finalize()")
         let (nameBytes, nameFlags) = try encodeName(name)
@@ -250,8 +280,9 @@ public final class ZipWriter {
 
         let (dosDate, dosTime) = DOSDateTime.from(modificationDate)
         let ext = (name as NSString).pathExtension.lowercased()
-        let baseMethod: Zip.Method =
-            (isDirectory || size == 0 || Self.storeExtensions.contains(ext)) ? .store : .deflate
+        let baseMethod: Zip.Method = precompressed?.method
+            ?? ((isDirectory || size == 0 || forceStore || Self.storeExtensions.contains(ext))
+                ? .store : .deflate)
 
         var flags = nameFlags
         var methodRaw = baseMethod.rawValue
@@ -274,10 +305,14 @@ public final class ZipWriter {
         // written — pre-scan the source.
         var precomputedCRC: UInt32 = 0
         if case .zipCrypto = encryption {
-            var crc = CRC32()
-            let next = try open()
-            while let chunk = try next() { crc.update(chunk) }
-            precomputedCRC = crc.value
+            if let precompressed {
+                precomputedCRC = precompressed.crc32
+            } else {
+                var crc = CRC32()
+                let next = try open()
+                while let chunk = try next() { crc.update(chunk) }
+                precomputedCRC = crc.value
+            }
         }
 
         let zip64 = size >= zip64Threshold
@@ -343,11 +378,14 @@ public final class ZipWriter {
             try file.write(contentsOf: out)
         }
 
-        let deflater = baseMethod == .deflate ? try DeflateStream(.compress) : nil
+        let deflater = (precompressed == nil && baseMethod == .deflate)
+            ? try DeflateStream(.compress) : nil
         let next = try open()
         while let chunk = try next() {
-            crc.update(chunk)
-            uncompressed += UInt64(chunk.count)
+            if precompressed == nil {
+                crc.update(chunk)
+                uncompressed += UInt64(chunk.count)
+            }
             if let deflater {
                 try deflater.process(chunk, final: false, sink: emit)
             } else {
@@ -356,6 +394,9 @@ public final class ZipWriter {
         }
         if let deflater {
             try deflater.process(Data(), final: true, sink: emit)
+        }
+        if let precompressed {
+            uncompressed = precompressed.uncompressedSize
         }
         if aes != nil {
             let auth = aes!.authCode()
@@ -366,7 +407,7 @@ public final class ZipWriter {
         // --- patch the local header ---------------------------------------
         let crcValue: UInt32
         switch encryption {
-        case .none: crcValue = crc.value
+        case .none: crcValue = precompressed?.crc32 ?? crc.value
         case .zipCrypto: crcValue = precomputedCRC
         case .aes256: crcValue = 0 // AE-2 zeroes the CRC
         }

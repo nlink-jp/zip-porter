@@ -117,18 +117,51 @@ public enum Packer {
         var writerOptions = ZipWriter.Options()
         writerOptions.nameEncoding = options.nameEncoding
         writerOptions.encryption = options.encryption
+        // Compress up front, in parallel, then write in order (ADR-013).
+        // Entries that don't benefit from deflate are left to the writer's
+        // streaming path, which stores them at I/O speed.
+        let fileItems = items.enumerated().filter { !$0.element.isDirectory }
+        let deflatable = fileItems.map { _, item in
+            !ZipWriter.storeExtensions.contains((item.archivePath as NSString).pathExtension.lowercased())
+                && ParallelCompressor.isWorthDeflating(item.url)
+        }
+        var compressed: [ParallelCompressor.Result?] = []
+        if fileItems.count > 1 {
+            compressed = try ParallelCompressor.compress(
+                fileItems.map(\.element.url),
+                deflate: deflatable,
+                scratchDirectory: actualOutput.deletingLastPathComponent(),
+                shouldCancel: shouldCancel)
+        }
+        defer { ParallelCompressor.cleanUp(compressed) }
+        var precompressed: [Int: ParallelCompressor.Result] = [:]
+        for (slot, (index, _)) in fileItems.enumerated() where slot < compressed.count {
+            if let result = compressed[slot] { precompressed[index] = result }
+        }
+
         let writer = try ZipWriter(url: actualOutput, options: writerOptions)
         var files = 0
         var directories = 0
         do {
-            for item in items {
+            for (index, item) in items.enumerated() {
                 if shouldCancel?() == true { throw CancellationError() }
                 progress?(item.archivePath)
                 if item.isDirectory {
                     try writer.addDirectory(item.archivePath, modificationDate: modificationDate(of: item.url))
                     directories += 1
+                } else if let ready = precompressed[index] {
+                    try writer.addPrecompressed(
+                        item.archivePath,
+                        precompressed: ZipWriter.Precompressed(
+                            method: .deflate,
+                            crc32: ready.crc32,
+                            uncompressedSize: ready.uncompressedSize),
+                        modificationDate: modificationDate(of: item.url),
+                        open: ready.open)
+                    files += 1
                 } else {
-                    try writer.addFile(item.archivePath, fileURL: item.url)
+                    try writer.addFile(item.archivePath, fileURL: item.url,
+                                       forceStore: true)
                     files += 1
                 }
             }

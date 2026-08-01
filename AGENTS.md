@@ -74,6 +74,12 @@ docs/{en,ja}/               RFP (design of record)
 - **Hostile fixtures live in `scripts/gen-hostile-fixtures.py`** — bombs,
   overlap, duplicates, truncation. Our own writer cannot produce these
   structures, which is the point: they are built from the format spec.
+- **Packing compresses in parallel and writes sequentially** (ADR-013).
+  Entry order comes from `Packer`'s sort, so output stays byte-for-byte
+  deterministic — there is a test for that; keep it. Encryption stays in
+  the sequential write phase (per-entry salts), and `ParallelCompressor`
+  spills compressed output above 16 MB to scratch files that the writer
+  drains and `cleanUp` deletes on every exit path.
 - **Defaults are modern** (UTF-8+NFC, AES-256); CP932 / ZipCrypto stay
   opt-in flags with warnings.
 - `make build`, never bare `swift build` outputs into the repo root.

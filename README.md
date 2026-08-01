@@ -115,6 +115,18 @@ extraction refuses malformed archives rather than trying to salvage them
   names instead of silently overwriting each other
 - Integrity is verified for every entry: HMAC for AES, CRC-32 otherwise
 
+### Performance
+
+Entries are compressed in parallel and written in order, so archives remain
+byte-for-byte deterministic. Files whose head does not compress are stored
+rather than deflated — faster, and slightly smaller. On a 12-core machine,
+a 310 MB / 150-file mixed corpus packs in 1.72 s (Apple `ditto`: 6.93 s,
+Info-ZIP `zip -r`: 7.00 s).
+
+A single large file still compresses on one core — see
+[ADR-013](https://github.com/nlink-jp/.github/blob/main/adr/013-zip-porter-parallel-compression.md)
+for why, and what it would take to change.
+
 ### inspect
 
 Prints each entry's size, method, encryption, and UTF-8-flag state, plus

@@ -167,6 +167,14 @@ final class PackerTests: XCTestCase {
         super.tearDown()
     }
 
+    private func writeData(_ relative: String, _ data: Data) throws -> URL {
+        let url = workDir.appendingPathComponent(relative)
+        try FileManager.default.createDirectory(
+            at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try data.write(to: url)
+        return url
+    }
+
     private func write(_ relative: String, _ content: String) throws -> URL {
         let url = workDir.appendingPathComponent(relative)
         try FileManager.default.createDirectory(
@@ -230,6 +238,103 @@ final class PackerTests: XCTestCase {
         let result = try Packer.pack(inputs: [workDir.appendingPathComponent("d")], output: out)
         XCTAssertEqual(result.outputURL.lastPathComponent, "out 2.zip")
         XCTAssertEqual(try Data(contentsOf: out), Data("existing".utf8))
+    }
+
+    // MARK: - Parallel compression (ADR-013)
+
+    /// Text that deflates well, so the probe keeps these on the deflate path.
+    private func compressibleData(_ seed: Int, count: Int) -> Data {
+        var text = ""
+        var value = seed
+        while text.utf8.count < count {
+            value = (value &* 1103515245 &+ 12345) & 0x7FFF_FFFF
+            text += "line \(value % 97) alpha beta gamma データ 日本語\n"
+        }
+        return Data(text.utf8)
+    }
+
+    func testParallelPackRoundTripsManyEntries() throws {
+        // Enough entries to actually run concurrently, with distinct
+        // contents so a mixed-up result cannot pass.
+        for i in 0..<60 {
+            _ = try writeData("many/file\(i).txt", compressibleData(i, count: 40_000))
+        }
+        let result = try Packer.pack(
+            inputs: [workDir.appendingPathComponent("many")],
+            output: workDir.appendingPathComponent("many.zip"))
+        XCTAssertEqual(result.fileCount, 60)
+
+        let reader = try ZipReader(url: result.outputURL)
+        for i in 0..<60 {
+            let entry = try XCTUnwrap(reader.entries.first {
+                reader.name(of: $0) == "many/file\(i).txt"
+            }, "entry \(i) missing")
+            XCTAssertEqual(try reader.extractData(entry), compressibleData(i, count: 40_000),
+                           "entry \(i) has the wrong bytes")
+            XCTAssertEqual(entry.method, .deflate)
+        }
+    }
+
+    func testParallelPackIsDeterministic() throws {
+        for i in 0..<30 {
+            _ = try writeData("d/file\(i).txt", compressibleData(i, count: 20_000))
+        }
+        let first = try Packer.pack(inputs: [workDir.appendingPathComponent("d")],
+                                    output: workDir.appendingPathComponent("a.zip"))
+        let second = try Packer.pack(inputs: [workDir.appendingPathComponent("d")],
+                                     output: workDir.appendingPathComponent("b.zip"))
+        XCTAssertEqual(try Data(contentsOf: first.outputURL),
+                       try Data(contentsOf: second.outputURL),
+                       "concurrent compression must not change the bytes written")
+    }
+
+    func testParallelPackWithEncryptionRoundTrips() throws {
+        for i in 0..<20 {
+            _ = try writeData("d/file\(i).txt", compressibleData(i, count: 30_000))
+        }
+        var options = Packer.Options()
+        options.encryption = .aes256(password: "pw")
+        let result = try Packer.pack(inputs: [workDir.appendingPathComponent("d")],
+                                     output: workDir.appendingPathComponent("enc.zip"),
+                                     options: options)
+        let reader = try ZipReader(url: result.outputURL)
+        let entry = try XCTUnwrap(reader.entries.first { reader.name(of: $0) == "d/file7.txt" })
+        XCTAssertEqual(try reader.extractData(entry, password: "pw"),
+                       compressibleData(7, count: 30_000))
+    }
+
+    func testIncompressibleDataIsStoredNotDeflated() throws {
+        var random = SystemRandomNumberGenerator()
+        let noise = Data((0..<(1 << 20)).map { _ in UInt8.random(in: 0...255, using: &random) })
+        _ = try writeData("d/noise.bin", noise)
+        _ = try writeData("d/text.txt", compressibleData(1, count: 200_000))
+        let result = try Packer.pack(inputs: [workDir.appendingPathComponent("d")],
+                                     output: workDir.appendingPathComponent("mixed.zip"))
+        let reader = try ZipReader(url: result.outputURL)
+        let noiseEntry = try XCTUnwrap(reader.entries.first { reader.name(of: $0) == "d/noise.bin" })
+        let textEntry = try XCTUnwrap(reader.entries.first { reader.name(of: $0) == "d/text.txt" })
+        XCTAssertEqual(noiseEntry.method, .store, "random data must not be deflated")
+        XCTAssertEqual(noiseEntry.compressedSize, UInt64(noise.count),
+                       "stored data carries no deflate framing")
+        XCTAssertEqual(textEntry.method, .deflate, "compressible data must still deflate")
+        XCTAssertEqual(try reader.extractData(noiseEntry), noise)
+    }
+
+    func testSpilledEntryRoundTrips() throws {
+        // Forces the scratch-file path: compressed output above the spill
+        // threshold cannot stay in memory.
+        let big = compressibleData(3, count: 40 << 20)
+        _ = try writeData("d/big.txt", big)
+        _ = try writeData("d/small.txt", compressibleData(4, count: 1000))
+        let result = try Packer.pack(inputs: [workDir.appendingPathComponent("d")],
+                                     output: workDir.appendingPathComponent("spill.zip"))
+        let reader = try ZipReader(url: result.outputURL)
+        let entry = try XCTUnwrap(reader.entries.first { reader.name(of: $0) == "d/big.txt" })
+        XCTAssertEqual(try reader.extractData(entry), big)
+        // Scratch files must not survive the pack.
+        let leftovers = try FileManager.default.contentsOfDirectory(atPath: workDir.path)
+            .filter { $0.hasPrefix("zp-") }
+        XCTAssertEqual(leftovers, [])
     }
 
     func testOverwriteReplacesTheChosenPath() throws {

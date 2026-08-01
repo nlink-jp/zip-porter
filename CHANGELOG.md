@@ -2,6 +2,29 @@
 
 ## [Unreleased]
 
+## [v0.5.0] - 2026-08-01
+
+Compression throughput ([ADR-013](https://github.com/nlink-jp/.github/blob/main/adr/013-zip-porter-parallel-compression.md)).
+
+### Changed
+
+- **Entries are compressed in parallel** and written in the same order as
+  before, so archives stay byte-for-byte deterministic. On a 12-core
+  machine, a 310 MB / 150-file corpus went from 5.43 s to 1.72 s (3.2×);
+  240 MB of text from 2.87 s to 0.73 s (3.9×). Memory stays bounded:
+  compressed output above 16 MB spills to a scratch file that the writer
+  drains and deletes
+- **Data that does not compress is stored instead of deflated**, decided by
+  test-compressing the head of each file rather than trusting its
+  extension. 100 MB of random data went from 2.07 s to 0.39 s (5.3×), and
+  the archive is slightly *smaller* — deflate adds framing to data it
+  cannot shrink
+- A single-entry archive keeps the old streaming path; there is nothing to
+  overlap
+
+Not included: parallelising a single large file's deflate stream, and a
+user-facing compression level. Both need libz and are under investigation.
+
 ## [v0.4.1] - 2026-08-01
 
 ### Fixed
@@ -144,7 +167,8 @@ instead of consuming resources or silently losing data.
   reveal in Finder, move archive to Trash
 - en/ja localization; app icon
 
-[Unreleased]: https://github.com/nlink-jp/zip-porter/compare/v0.4.1...HEAD
+[Unreleased]: https://github.com/nlink-jp/zip-porter/compare/v0.5.0...HEAD
+[v0.5.0]: https://github.com/nlink-jp/zip-porter/compare/v0.4.1...v0.5.0
 [v0.4.1]: https://github.com/nlink-jp/zip-porter/compare/v0.4.0...v0.4.1
 [v0.4.0]: https://github.com/nlink-jp/zip-porter/compare/v0.3.1...v0.4.0
 [v0.3.1]: https://github.com/nlink-jp/zip-porter/compare/v0.3.0...v0.3.1
