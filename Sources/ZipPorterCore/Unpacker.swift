@@ -50,7 +50,13 @@ public enum Unpacker {
         return components.isEmpty ? nil : components
     }
 
-    public static func unpack(zipURL: URL, options: Options = Options()) throws -> Result {
+    /// `progress` receives each entry name as work starts on it;
+    /// `shouldCancel` is polled between entries — on cancellation the
+    /// half-written tree is removed and `CancellationError` is thrown.
+    public static func unpack(zipURL: URL,
+                              options: Options = Options(),
+                              progress: ((String) -> Void)? = nil,
+                              shouldCancel: (() -> Bool)? = nil) throws -> Result {
         let reader = try ZipReader(url: zipURL)
         let destBase = options.destination ?? zipURL.deletingLastPathComponent()
         var isDir: ObjCBool = false
@@ -114,7 +120,9 @@ public enum Unpacker {
 
         func extractAll() throws {
             for (entry, rawComponents) in work {
+                if shouldCancel?() == true { throw CancellationError() }
                 var components = rawComponents
+                progress?(rawComponents.joined(separator: "/"))
                 if let rename, components[0] == rename.from {
                     components[0] = rename.to
                 }

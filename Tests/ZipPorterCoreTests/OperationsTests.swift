@@ -221,6 +221,37 @@ final class PackerTests: XCTestCase {
         }
     }
 
+    func testCancellationRemovesPartialOutput() throws {
+        _ = try write("d/a.txt", "A")
+        _ = try write("d/b.txt", "B")
+        var calls = 0
+        XCTAssertThrowsError(try Packer.pack(
+            inputs: [workDir.appendingPathComponent("d")],
+            output: workDir.appendingPathComponent("out.zip"),
+            shouldCancel: { calls += 1; return calls > 2 })) { error in
+            XCTAssertTrue(error is CancellationError, "expected CancellationError, got \(error)")
+        }
+        XCTAssertFalse(FileManager.default.fileExists(
+            atPath: workDir.appendingPathComponent("out.zip").path))
+    }
+
+    func testUnpackCancellationRemovesTree() throws {
+        _ = try write("d/a.txt", "A")
+        _ = try write("d/b.txt", "B")
+        let packed = try Packer.pack(
+            inputs: [workDir.appendingPathComponent("d")],
+            output: workDir.appendingPathComponent("out.zip"))
+        let dest = workDir.appendingPathComponent("dest")
+        var options = Unpacker.Options()
+        options.destination = dest
+        XCTAssertThrowsError(try Unpacker.unpack(
+            zipURL: packed.outputURL, options: options,
+            shouldCancel: { true })) { error in
+            XCTAssertTrue(error is CancellationError, "expected CancellationError, got \(error)")
+        }
+        XCTAssertFalse(FileManager.default.fileExists(atPath: dest.appendingPathComponent("d").path))
+    }
+
     func testPackedEmptyDirectorySurvivesRoundTrip() throws {
         try FileManager.default.createDirectory(
             at: workDir.appendingPathComponent("d/空フォルダ"), withIntermediateDirectories: true)

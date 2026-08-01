@@ -28,7 +28,15 @@ public enum Packer {
 
     /// Pack `inputs` (files and/or directories, all placed at the archive
     /// root) into `output` — or the uniquified variant of it.
-    public static func pack(inputs: [URL], output: URL, options: Options = Options()) throws -> Result {
+    ///
+    /// `progress` receives each archive path as work starts on it;
+    /// `shouldCancel` is polled between entries — when it returns true the
+    /// partial archive is removed and `CancellationError` is thrown.
+    public static func pack(inputs: [URL],
+                            output: URL,
+                            options: Options = Options(),
+                            progress: ((String) -> Void)? = nil,
+                            shouldCancel: (() -> Bool)? = nil) throws -> Result {
         // Collect (archivePath, fileURL?, isDirectory) first so entries are
         // sorted and junk/symlinks decided before any byte is written.
         struct Item {
@@ -104,6 +112,8 @@ public enum Packer {
         var directories = 0
         do {
             for item in items {
+                if shouldCancel?() == true { throw CancellationError() }
+                progress?(item.archivePath)
                 if item.isDirectory {
                     try writer.addDirectory(item.archivePath, modificationDate: modificationDate(of: item.url))
                     directories += 1
