@@ -17,13 +17,25 @@ zip-porter は MacWinZipper（作成側）と The Unarchiver（展開側・ZIP �
   ファイル名格納、`--zipcrypto` で Windows Explorer 単体で開ける
   アーカイブを作成（強度警告あり）
 
-> **Status: エンジン＋CLI 完成（RFP Phase 1）。** ドラッグ＆ドロップ GUI
-> （Phase 2）は開発中です。全体仕様と計画は
-> [RFP](docs/ja/zip-porter-rfp.ja.md) を参照してください。
+> **Status: エンジン＋CLI＋GUI 完成（RFP Phase 1–2）、リリース前。**
+> 全体仕様は [RFP](docs/ja/zip-porter-rfp.ja.md) を参照してください。
 
-## 使い方
+## GUI
 
-GUI アプリのバイナリがそのまま CLI としても動作します:
+ZipPorter を起動してウィンドウにドロップするだけです:
+
+- **ファイル/フォルダをドロップ** → オプションシート（パスワード・CP932・
+  ZipCrypto）が表示され、Windows で安全に開ける ZIP を入力と同じ場所に作成。
+  シートは設定を記憶し、「次回から表示しない」でスキップ可（設定画面で復帰）
+- **`.zip` をドロップ**（またはダブルクリック — ZipPorter は ZIP の
+  ハンドラとして登録されます）→ 展開。暗号化 ZIP はパスワードを確認
+- **設定（⌘,）** — The Unarchiver 風の展開設定: 展開先（同じフォルダ/
+  毎回確認/固定フォルダ）、新規フォルダ作成（しない/複数最上位項目のみ/
+  常に）、作成フォルダの変更日、Finder に表示、アーカイブをゴミ箱へ
+
+## CLI
+
+同じアプリのバイナリがそのまま CLI としても動作します:
 
 ```
 zip-porter pack <input>... [-o <output.zip>] [--password] [--cp932] [--zipcrypto] [--no-clean]
@@ -32,8 +44,7 @@ zip-porter inspect <input.zip>
 zip-porter --version
 ```
 
-コマンドなしで起動すると GUI が立ち上がります（Phase 2 まではプレース
-ホルダーウィンドウ）。
+コマンドなしで起動すると GUI が立ち上がります。
 
 ### pack（作成）
 

@@ -4,6 +4,16 @@
 
 ### Added
 
+- **GUI (RFP Phase 2)**: drag-and-drop window (files/folders → pack,
+  `.zip` → extract), `.zip` double-click handling, per-drop pack options
+  sheet (password AES-256/ZipCrypto, CP932, remembered defaults,
+  skippable), progress sheets with cancel, password prompt-on-demand
+- **Settings window (⌘,)** — The Unarchiver-style extraction preferences:
+  destination (same folder / ask / fixed), wrapper-folder policy
+  (never / only-multiple / always), created-folder modification date,
+  reveal in Finder, move archive to Trash
+- en/ja localization; app icon
+
 - **Engine (RFP Phase 1)**: ZIP reader/writer in `ZipPorterCore`
   - Central-directory parsing (ZIP64-aware), streaming extraction with CRC
     verification; streaming creation with local-header patch-back

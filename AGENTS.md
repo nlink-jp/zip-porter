@@ -6,12 +6,14 @@ Windows-safe ZIP creation/extraction for macOS (Swift, AppKit). Replaces
 MacWinZipper (creation) and The Unarchiver (extraction, ZIP only) with one
 clean, ad-free, fully-local app. **Apple Silicon, macOS 14+.**
 
-**Status:** RFP Phase 1 complete — engine (`ZipPorterCore`: ZIP R/W, ZIP64,
-ZipCrypto + WinZip AES, encoding auto-detect, junk filter) and full CLI
-(`pack` / `unpack` / `inspect`), 80+ tests including cross-verification
-against Info-ZIP, ditto, 7-Zip, and Python zipfile. Phase 2 (drag-&-drop
-GUI, option sheet, `.zip` association, en/ja l10n) not started. Design of
-record: `docs/en/zip-porter-rfp.md` / `docs/ja/zip-porter-rfp.ja.md`.
+**Status:** RFP Phases 1–2 complete — engine (`ZipPorterCore`: ZIP R/W,
+ZIP64, ZipCrypto + WinZip AES, encoding auto-detect, junk filter), full CLI
+(`pack` / `unpack` / `inspect`), and the AppKit GUI (drop window, pack
+options sheet, Unarchiver-style extraction settings window, `.zip`
+handling, en/ja l10n, icon). ~90 tests including cross-verification
+against Info-ZIP, ditto, 7-Zip, and Python zipfile. Phase 3 (notarize,
+release, tap, util-series integration) not started. Design of record:
+`docs/en/zip-porter-rfp.md` / `docs/ja/zip-porter-rfp.ja.md`.
 
 ## Build / test / run
 
@@ -40,8 +42,11 @@ Sources/ZipPorterCore/      UI-independent engine (no AppKit): CRC32, DOSDateTim
                             ZipStructures, DeflateStream, ZipReader, ZipWriter,
                             ZipCryptoCipher, WinZipAES, EncodingDetector,
                             JunkFilter, FileNameTransform, Packer, Unpacker, PathUtil
-Sources/ZipPorter/          AppKit app + CLI: App (entry/routing), CLI (usage),
-                            CLICommands (parse + run), PasswordPrompt, MainMenu
+Sources/ZipPorter/          AppKit app + CLI: App (entry/routing/delegate), CLI (usage),
+                            CLICommands (parse + run), PasswordPrompt, MainMenu,
+                            MainViewController (flows), DropView, Sheets (options/
+                            password/progress), SettingsWindow, Preferences, L10n,
+                            Resources/{en,ja}.lproj
 Tests/ZipPorterCoreTests/   engine tests + testdata/ cross-verification fixtures
 Tests/ZipPorterTests/       CLI routing/parsing tests
 scripts/                    vendored org templates + gen-fixtures.sh

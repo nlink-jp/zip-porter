@@ -17,13 +17,28 @@ app that works fully offline:
   Japanese Windows tools; `--zipcrypto` produces archives Windows Explorer
   can open standalone (with a weakness warning)
 
-> **Status: engine + CLI complete (RFP Phase 1).** The drag-&-drop GUI
-> (Phase 2) is in development. See the [RFP](docs/en/zip-porter-rfp.md) for
-> the full specification and plan.
+> **Status: engine + CLI + GUI complete (RFP Phases 1–2), pre-release.**
+> See the [RFP](docs/en/zip-porter-rfp.md) for the full specification.
 
-## Usage
+## GUI
 
-The GUI app binary doubles as a CLI:
+Launch ZipPorter and drop things on the window:
+
+- **Drop files or folders** → an options sheet (password, CP932, ZipCrypto)
+  appears, then a Windows-safe ZIP is created next to the input. The sheet
+  remembers its settings and can be skipped ("Don't show these options
+  again"; re-enable in Settings)
+- **Drop a `.zip`** (or double-click one — ZipPorter registers as a ZIP
+  handler) → it is extracted. Encrypted archives prompt for the password
+- **Settings (⌘,)** — The Unarchiver-style extraction preferences:
+  destination (same folder / ask every time / a fixed folder), when to
+  create a wrapper folder (never / only for multiple top-level items /
+  always), the created folder's modification date, reveal-in-Finder, and
+  move-archive-to-Trash
+
+## CLI
+
+The same app binary doubles as a CLI:
 
 ```
 zip-porter pack <input>... [-o <output.zip>] [--password] [--cp932] [--zipcrypto] [--no-clean]
@@ -32,7 +47,7 @@ zip-porter inspect <input.zip>
 zip-porter --version
 ```
 
-Run with no command to launch the GUI (a placeholder window until Phase 2).
+Run with no command to launch the GUI.
 
 ### pack
 
