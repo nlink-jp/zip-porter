@@ -17,8 +17,18 @@ zip-porter は MacWinZipper（作成側）と The Unarchiver（展開側・ZIP �
   ファイル名格納、`--zipcrypto` で Windows Explorer 単体で開ける
   アーカイブを作成（強度警告あり）
 
-> **Status: エンジン＋CLI＋GUI 完成（RFP Phase 1–2）、リリース前。**
 > 全体仕様は [RFP](docs/ja/zip-porter-rfp.ja.md) を参照してください。
+> 生成物は Windows の Explorer で実機検証済みです（UTF-8 ファイル名・
+> 不要ファイルなし・ZipCrypto の Explorer 単体展開）。
+
+## インストール
+
+```
+brew install --cask nlink-jp/tap/zip-porter
+```
+
+または [Releases](https://github.com/nlink-jp/zip-porter/releases) から
+notarize 済み `.app` をダウンロードしてください。
 
 ## GUI
 

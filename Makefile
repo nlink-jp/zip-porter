@@ -28,6 +28,7 @@ BREW_DESC      := Windows-safe ZIP creation and extraction for macOS (junk-free,
 BREW_NAME      := $(NAME)
 BREW_APP       := $(APP_NAME).app
 BREW_BUNDLE_ID := $(BUNDLE_ID)
+BREW_MACOS_FLOOR := :sonoma
 include scripts/release-brew.mk
 
 .PHONY: build build-app package test clean run

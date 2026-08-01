@@ -17,8 +17,18 @@ app that works fully offline:
   Japanese Windows tools; `--zipcrypto` produces archives Windows Explorer
   can open standalone (with a weakness warning)
 
-> **Status: engine + CLI + GUI complete (RFP Phases 1–2), pre-release.**
 > See the [RFP](docs/en/zip-porter-rfp.md) for the full specification.
+> Output verified on Windows Explorer with real archives (UTF-8 names,
+> junk-free trees, ZipCrypto extraction).
+
+## Install
+
+```
+brew install --cask nlink-jp/tap/zip-porter
+```
+
+Or download the notarized `.app` from
+[Releases](https://github.com/nlink-jp/zip-porter/releases).
 
 ## GUI
 

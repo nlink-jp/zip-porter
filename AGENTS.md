@@ -6,14 +6,14 @@ Windows-safe ZIP creation/extraction for macOS (Swift, AppKit). Replaces
 MacWinZipper (creation) and The Unarchiver (extraction, ZIP only) with one
 clean, ad-free, fully-local app. **Apple Silicon, macOS 14+.**
 
-**Status:** RFP Phases 1–2 complete — engine (`ZipPorterCore`: ZIP R/W,
-ZIP64, ZipCrypto + WinZip AES, encoding auto-detect, junk filter), full CLI
-(`pack` / `unpack` / `inspect`), and the AppKit GUI (drop window, pack
-options sheet, Unarchiver-style extraction settings window, `.zip`
-handling, en/ja l10n, icon). ~90 tests including cross-verification
-against Info-ZIP, ditto, 7-Zip, and Python zipfile. Phase 3 (notarize,
-release, tap, util-series integration) not started. Design of record:
-`docs/en/zip-porter-rfp.md` / `docs/ja/zip-porter-rfp.ja.md`.
+**Status:** Released (see `git tag` for the current version) — engine
+(`ZipPorterCore`: ZIP R/W, ZIP64, ZipCrypto + WinZip AES, encoding
+auto-detect, junk filter), full CLI (`pack` / `unpack` / `inspect`), and
+the AppKit GUI (drop window, pack options sheet, Unarchiver-style
+extraction settings window, `.zip` handling, en/ja l10n, icon). ~90 tests
+including cross-verification against Info-ZIP, ditto, 7-Zip, and Python
+zipfile; output real-machine verified on Windows Explorer. Design of
+record: `docs/en/zip-porter-rfp.md` / `docs/ja/zip-porter-rfp.ja.md`.
 
 ## Build / test / run
 
