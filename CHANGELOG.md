@@ -2,6 +2,14 @@
 
 ## [Unreleased]
 
+## [v0.4.1] - 2026-08-01
+
+### Fixed
+
+- The destination popup's "ask" item was worded for extraction ("展開先
+  フォルダを確認") and read wrong in the creation section; both now say
+  "毎回確認する" / "Ask every time"
+
 ## [v0.4.0] - 2026-08-01
 
 ### Added
@@ -136,7 +144,8 @@ instead of consuming resources or silently losing data.
   reveal in Finder, move archive to Trash
 - en/ja localization; app icon
 
-[Unreleased]: https://github.com/nlink-jp/zip-porter/compare/v0.4.0...HEAD
+[Unreleased]: https://github.com/nlink-jp/zip-porter/compare/v0.4.1...HEAD
+[v0.4.1]: https://github.com/nlink-jp/zip-porter/compare/v0.4.0...v0.4.1
 [v0.4.0]: https://github.com/nlink-jp/zip-porter/compare/v0.3.1...v0.4.0
 [v0.3.1]: https://github.com/nlink-jp/zip-porter/compare/v0.3.0...v0.3.1
 [v0.3.0]: https://github.com/nlink-jp/zip-porter/compare/v0.2.2...v0.3.0

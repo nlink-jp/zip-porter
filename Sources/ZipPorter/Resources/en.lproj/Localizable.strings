@@ -34,7 +34,6 @@
 "Extraction" = "Extraction";
 "Extract to:" = "Extract to:";
 "Same folder as the archive" = "Same folder as the archive";
-"Ask every time" = "Ask every time";
 "Choose folder…" = "Choose folder…";
 "Create a new folder for extracted files:" = "Create a new folder for extracted files:";
 "Never" = "Never";
@@ -68,3 +67,4 @@
 "Excluded macOS metadata files:" = "Excluded macOS metadata files:";
 "Create in:" = "Create in:";
 "Same folder as the original items" = "Same folder as the original items";
+"Ask every time" = "Ask every time";

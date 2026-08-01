@@ -34,7 +34,6 @@
 "Extraction" = "展開";
 "Extract to:" = "アーカイブの展開先:";
 "Same folder as the archive" = "アーカイブと同じフォルダ";
-"Ask every time" = "展開先フォルダを確認";
 "Choose folder…" = "その他…";
 "Create a new folder for extracted files:" = "展開したファイル用の新規フォルダを作成:";
 "Never" = "しない";
@@ -68,3 +67,4 @@
 "Excluded macOS metadata files:" = "macOS の不要ファイルを除外しました:";
 "Create in:" = "アーカイブの作成先:";
 "Same folder as the original items" = "元の項目と同じフォルダ";
+"Ask every time" = "毎回確認する";
