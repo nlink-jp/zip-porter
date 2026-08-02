@@ -29,6 +29,10 @@ BREW_NAME      := $(NAME)
 BREW_APP       := $(APP_NAME).app
 BREW_BUNDLE_ID := $(BUNDLE_ID)
 BREW_MACOS_FLOOR := :sonoma
+# The .app doubles as the CLI; without this symlink the command sits
+# unreachable inside the bundle.
+BREW_BINARY     := $(NAME)
+BREW_BINARY_EXE := $(APP_NAME)
 include scripts/release-brew.mk
 
 .PHONY: build build-app package test clean run

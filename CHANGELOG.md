@@ -2,6 +2,19 @@
 
 ## [Unreleased]
 
+## [v0.9.2] - 2026-08-02
+
+### Fixed
+
+- **The CLI was documented but not reachable.** The README described
+  `zip-porter pack …` while the executable sat inside the app bundle with
+  nothing on PATH. The cask now symlinks it as `zip-porter`, and both
+  READMEs say how to invoke it — including the manual `ln -s` for a
+  hand-installed `.app`
+- The shared cask template gained an optional `binary` stanza
+  (`BREW_BINARY` / `BREW_BINARY_EXE`), so other GUI apps with an embedded
+  CLI get the same treatment
+
 ## [v0.9.1] - 2026-08-02
 
 ### Changed
@@ -273,7 +286,8 @@ instead of consuming resources or silently losing data.
   reveal in Finder, move archive to Trash
 - en/ja localization; app icon
 
-[Unreleased]: https://github.com/nlink-jp/zip-porter/compare/v0.9.1...HEAD
+[Unreleased]: https://github.com/nlink-jp/zip-porter/compare/v0.9.2...HEAD
+[v0.9.2]: https://github.com/nlink-jp/zip-porter/compare/v0.9.1...v0.9.2
 [v0.9.1]: https://github.com/nlink-jp/zip-porter/compare/v0.9.0...v0.9.1
 [v0.9.0]: https://github.com/nlink-jp/zip-porter/compare/v0.8.3...v0.9.0
 [v0.8.3]: https://github.com/nlink-jp/zip-porter/compare/v0.8.2...v0.8.3

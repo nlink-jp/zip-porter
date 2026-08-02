@@ -61,7 +61,22 @@ Launch ZipPorter and drop things on the window:
 
 ## CLI
 
-The same app binary doubles as a CLI:
+The same binary inside the app doubles as a CLI. Installing the cask puts
+`zip-porter` on your PATH:
+
+```bash
+brew install --cask nlink-jp/tap/zip-porter
+zip-porter --version
+```
+
+If you installed the `.app` by hand instead, the executable lives inside
+the bundle — link it yourself:
+
+```bash
+ln -s "/Applications/ZipPorter.app/Contents/MacOS/ZipPorter" /usr/local/bin/zip-porter
+```
+
+Commands:
 
 ```
 zip-porter pack <input>... [-o <output.zip>] [--password] [--cp932] [--zipcrypto] [--no-clean]
