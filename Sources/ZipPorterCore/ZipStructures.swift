@@ -115,17 +115,29 @@ public struct ZipEntry: Sendable {
 }
 
 /// Little-endian binary reading/writing helpers over Data.
+///
+/// The readers are bounds-checked and throwing on purpose. Every offset
+/// they are handed derives from a header field an attacker chose, and an
+/// out-of-range `Data` subscript is a trap rather than an error — a crash
+/// in the parser is a crash of the app that double-clicked the `.zip`.
+/// Keeping the check inside the accessor means a read added later cannot
+/// forget it; callers keep their own guards for the better message.
 extension Data {
-    func readU16(at offset: Int) -> UInt16 {
-        UInt16(self[startIndex + offset]) | UInt16(self[startIndex + offset + 1]) << 8
+    func readU16(at offset: Int) throws -> UInt16 {
+        // Phrased as a subtraction: `offset + 2` would itself overflow for
+        // an offset near Int.max.
+        guard offset >= 0, count - offset >= 2 else {
+            throw ZipReaderError.corrupt("read of 2 bytes at \(offset) is out of bounds (\(count))")
+        }
+        return UInt16(self[startIndex + offset]) | UInt16(self[startIndex + offset + 1]) << 8
     }
 
-    func readU32(at offset: Int) -> UInt32 {
-        UInt32(readU16(at: offset)) | UInt32(readU16(at: offset + 2)) << 16
+    func readU32(at offset: Int) throws -> UInt32 {
+        UInt32(try readU16(at: offset)) | UInt32(try readU16(at: offset + 2)) << 16
     }
 
-    func readU64(at offset: Int) -> UInt64 {
-        UInt64(readU32(at: offset)) | UInt64(readU32(at: offset + 4)) << 32
+    func readU64(at offset: Int) throws -> UInt64 {
+        UInt64(try readU32(at: offset)) | UInt64(try readU32(at: offset + 4)) << 32
     }
 
     mutating func appendU16(_ v: UInt16) {

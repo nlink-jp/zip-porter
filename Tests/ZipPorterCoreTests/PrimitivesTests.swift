@@ -80,22 +80,35 @@ final class PosixPermissionsTests: XCTestCase {
 }
 
 final class BinaryHelperTests: XCTestCase {
-    func testLittleEndianRoundTrip() {
+    func testLittleEndianRoundTrip() throws {
         var d = Data()
         d.appendU16(0xBEEF)
         d.appendU32(0xDEAD_BEEF)
         d.appendU64(0x0123_4567_89AB_CDEF)
-        XCTAssertEqual(d.readU16(at: 0), 0xBEEF)
-        XCTAssertEqual(d.readU32(at: 2), 0xDEAD_BEEF)
-        XCTAssertEqual(d.readU64(at: 6), 0x0123_4567_89AB_CDEF)
+        XCTAssertEqual(try d.readU16(at: 0), 0xBEEF)
+        XCTAssertEqual(try d.readU32(at: 2), 0xDEAD_BEEF)
+        XCTAssertEqual(try d.readU64(at: 6), 0x0123_4567_89AB_CDEF)
     }
 
-    func testReadsRespectSlicing() {
+    func testReadsPastTheEndThrowInsteadOfTrapping() {
+        // The whole point of the accessors being throwing: these offsets
+        // come from header fields, and a Data subscript out of range is a
+        // trap, not a catchable error.
+        let d = Data([0x01, 0x02, 0x03, 0x04])
+        XCTAssertThrowsError(try d.readU16(at: 3))
+        XCTAssertThrowsError(try d.readU32(at: 1))
+        XCTAssertThrowsError(try d.readU64(at: 0))
+        XCTAssertThrowsError(try d.readU16(at: -1))
+        XCTAssertThrowsError(try d.readU16(at: Int.max))
+        XCTAssertNoThrow(try d.readU32(at: 0))
+    }
+
+    func testReadsRespectSlicing() throws {
         // Data slices keep their parent's indices; readers must use startIndex.
         var d = Data([0xAA, 0xAA, 0x34, 0x12])
         d = d.subdata(in: 2..<4) // fresh Data
         let sliced = Data([0xAA, 0xAA, 0x34, 0x12])[2...]
-        XCTAssertEqual(d.readU16(at: 0), 0x1234)
-        XCTAssertEqual(sliced.readU16(at: 0), 0x1234)
+        XCTAssertEqual(try d.readU16(at: 0), 0x1234)
+        XCTAssertEqual(try sliced.readU16(at: 0), 0x1234)
     }
 }

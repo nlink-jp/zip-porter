@@ -71,8 +71,12 @@ public final class ZipReader {
         for entry in entries where !entry.isDirectory {
             let start = entry.localHeaderOffset
             let minimumHeader = UInt64(30 + entry.rawName.count)
-            let end = start &+ minimumHeader &+ entry.compressedSize
-            guard end <= fileSize else {
+            // An offset+size that wraps is out of bounds by definition;
+            // wrapping arithmetic here would fold it back into range and
+            // hand the entry a pass on the overlap check below.
+            let (headerEnd, headerOverflow) = start.addingReportingOverflow(minimumHeader)
+            let (end, dataOverflow) = headerEnd.addingReportingOverflow(entry.compressedSize)
+            guard !headerOverflow, !dataOverflow, end <= fileSize else {
                 throw ZipReaderError.corrupt("entry data runs past end of file")
             }
             ranges.append((start, end))
@@ -114,7 +118,7 @@ public final class ZipReader {
         var eocdPos: Int?
         var i = tailLen - 22
         while i >= 0 {
-            if tail.readU32(at: i) == Zip.eocdSignature {
+            if try tail.readU32(at: i) == Zip.eocdSignature {
                 eocdPos = i
                 break
             }
@@ -122,9 +126,9 @@ public final class ZipReader {
         }
         guard let eocd = eocdPos else { throw ZipReaderError.notAZipFile }
 
-        var totalEntries = UInt64(tail.readU16(at: eocd + 10))
-        var cdSize = UInt64(tail.readU32(at: eocd + 12))
-        var cdOffset = UInt64(tail.readU32(at: eocd + 16))
+        var totalEntries = UInt64(try tail.readU16(at: eocd + 10))
+        var cdSize = UInt64(try tail.readU32(at: eocd + 12))
+        var cdOffset = UInt64(try tail.readU32(at: eocd + 16))
 
         if totalEntries == 0xFFFF || cdSize == 0xFFFF_FFFF || cdOffset == 0xFFFF_FFFF {
             // ZIP64: locator sits immediately before the EOCD. A file whose
@@ -135,17 +139,17 @@ public final class ZipReader {
                 throw ZipReaderError.corrupt("ZIP64 locator missing")
             }
             let locator = try read(at: eocdAbs - 20, count: 20)
-            guard locator.readU32(at: 0) == Zip.zip64LocatorSignature else {
+            guard try locator.readU32(at: 0) == Zip.zip64LocatorSignature else {
                 throw ZipReaderError.corrupt("ZIP64 locator missing")
             }
-            let z64Offset = locator.readU64(at: 8)
+            let z64Offset = try locator.readU64(at: 8)
             let z64 = try read(at: z64Offset, count: 56)
-            guard z64.readU32(at: 0) == Zip.zip64EOCDSignature else {
+            guard try z64.readU32(at: 0) == Zip.zip64EOCDSignature else {
                 throw ZipReaderError.corrupt("ZIP64 EOCD missing")
             }
-            totalEntries = z64.readU64(at: 32)
-            cdSize = z64.readU64(at: 40)
-            cdOffset = z64.readU64(at: 48)
+            totalEntries = try z64.readU64(at: 32)
+            cdSize = try z64.readU64(at: 40)
+            cdOffset = try z64.readU64(at: 48)
         }
 
         // 256 MiB ceiling: a million entries occupy roughly 100 MB of
@@ -162,22 +166,22 @@ public final class ZipReader {
         var pos = 0
         entries.reserveCapacity(Int(min(totalEntries, 1 << 20)))
         for _ in 0..<totalEntries {
-            guard pos + 46 <= cd.count, cd.readU32(at: pos) == Zip.centralHeaderSignature else {
+            guard pos + 46 <= cd.count, try cd.readU32(at: pos) == Zip.centralHeaderSignature else {
                 throw ZipReaderError.corrupt("central header at \(pos)")
             }
-            let versionMadeBy = cd.readU16(at: pos + 4)
-            let flags = Zip.Flags(rawValue: cd.readU16(at: pos + 8))
-            let methodRaw = cd.readU16(at: pos + 10)
-            let dosTime = cd.readU16(at: pos + 12)
-            let dosDate = cd.readU16(at: pos + 14)
-            let crc = cd.readU32(at: pos + 16)
-            var compSize = UInt64(cd.readU32(at: pos + 20))
-            var uncompSize = UInt64(cd.readU32(at: pos + 24))
-            let nameLen = Int(cd.readU16(at: pos + 28))
-            let extraLen = Int(cd.readU16(at: pos + 30))
-            let commentLen = Int(cd.readU16(at: pos + 32))
-            let externalAttr = cd.readU32(at: pos + 38)
-            var localOffset = UInt64(cd.readU32(at: pos + 42))
+            let versionMadeBy = try cd.readU16(at: pos + 4)
+            let flags = Zip.Flags(rawValue: try cd.readU16(at: pos + 8))
+            let methodRaw = try cd.readU16(at: pos + 10)
+            let dosTime = try cd.readU16(at: pos + 12)
+            let dosDate = try cd.readU16(at: pos + 14)
+            let crc = try cd.readU32(at: pos + 16)
+            var compSize = UInt64(try cd.readU32(at: pos + 20))
+            var uncompSize = UInt64(try cd.readU32(at: pos + 24))
+            let nameLen = Int(try cd.readU16(at: pos + 28))
+            let extraLen = Int(try cd.readU16(at: pos + 30))
+            let commentLen = Int(try cd.readU16(at: pos + 32))
+            let externalAttr = try cd.readU32(at: pos + 38)
+            var localOffset = UInt64(try cd.readU32(at: pos + 42))
 
             guard pos + 46 + nameLen + extraLen + commentLen <= cd.count else {
                 throw ZipReaderError.corrupt("central entry overruns directory")
@@ -189,26 +193,26 @@ public final class ZipReader {
             var e = pos + 46 + nameLen
             let extraEnd = e + extraLen
             while e + 4 <= extraEnd {
-                let id = cd.readU16(at: e)
-                let size = Int(cd.readU16(at: e + 2))
+                let id = try cd.readU16(at: e)
+                let size = Int(try cd.readU16(at: e + 2))
                 guard e + 4 + size <= extraEnd else { break }
                 switch id {
                 case Zip.ExtraID.zip64:
                     var f = e + 4
                     if uncompSize == 0xFFFF_FFFF, f + 8 <= e + 4 + size {
-                        uncompSize = cd.readU64(at: f); f += 8
+                        uncompSize = try cd.readU64(at: f); f += 8
                     }
                     if compSize == 0xFFFF_FFFF, f + 8 <= e + 4 + size {
-                        compSize = cd.readU64(at: f); f += 8
+                        compSize = try cd.readU64(at: f); f += 8
                     }
                     if localOffset == 0xFFFF_FFFF, f + 8 <= e + 4 + size {
-                        localOffset = cd.readU64(at: f); f += 8
+                        localOffset = try cd.readU64(at: f); f += 8
                     }
                 case Zip.ExtraID.aes where size >= 7:
-                    let vendorVersion = UInt8(cd.readU16(at: e + 4) & 0xFF)
+                    let vendorVersion = UInt8(try cd.readU16(at: e + 4) & 0xFF)
                     let strengthRaw = cd[cd.startIndex + e + 8]
                     if let strength = Zip.AESStrength(rawValue: strengthRaw) {
-                        aesInfo = (vendorVersion, strength, cd.readU16(at: e + 9))
+                        aesInfo = (vendorVersion, strength, try cd.readU16(at: e + 9))
                     }
                 default:
                     break
@@ -276,11 +280,11 @@ public final class ZipReader {
         // The local header's name/extra lengths can differ from the central
         // directory's; data starts after the *local* copies.
         let lh = try read(at: entry.localHeaderOffset, count: 30)
-        guard lh.readU32(at: 0) == Zip.localHeaderSignature else {
+        guard try lh.readU32(at: 0) == Zip.localHeaderSignature else {
             throw ZipReaderError.corrupt("local header for \(name(of: entry))")
         }
-        let nameLen = Int(lh.readU16(at: 26))
-        let extraLen = Int(lh.readU16(at: 28))
+        let nameLen = Int(try lh.readU16(at: 26))
+        let extraLen = Int(try lh.readU16(at: 28))
         var offset = entry.localHeaderOffset + 30 + UInt64(nameLen + extraLen)
         var remaining = entry.compressedSize
 
