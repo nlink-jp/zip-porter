@@ -272,6 +272,30 @@ final class HardeningTests: XCTestCase {
         }
     }
 
+    func testQuarantineReachesImplicitlyCreatedDirectories() throws {
+        // No directory entries anywhere in this archive: every level below
+        // the top is created implicitly on the way to the file. Gatekeeper
+        // evaluates the bundle, not the executable inside it, so a `.app`
+        // whose root misses the attribute is a Gatekeeper bypass — which is
+        // what ADR-012 §4 exists to prevent.
+        let source = workDir.appendingPathComponent("bundle.zip")
+        let writer = try ZipWriter(url: source)
+        try writer.addFile("Demo.app/Contents/Info.plist", data: Data("<plist/>".utf8))
+        try writer.addFile("Demo.app/Contents/MacOS/demo", data: Data("#!/bin/sh\n".utf8))
+        try writer.finalize()
+        let marker = Data("0083;00000000;Safari;".utf8)
+        XCTAssertTrue(XattrUtil.applyQuarantine(marker, to: source))
+
+        let result = try Unpacker.unpack(zipURL: source, options: unpackOptions())
+        XCTAssertEqual(result.extractedDirectories, 0, "the archive declares no directory entries")
+        XCTAssertEqual(XattrUtil.quarantine(of: result.root), marker,
+                       "the bundle root must inherit the archive's quarantine")
+        for relative in ["Contents", "Contents/MacOS", "Contents/MacOS/demo"] {
+            XCTAssertEqual(XattrUtil.quarantine(of: result.root.appendingPathComponent(relative)),
+                           marker, "\(relative) must inherit the archive's quarantine")
+        }
+    }
+
     func testUnquarantinedArchiveProducesUnquarantinedFiles() throws {
         let source = workDir.appendingPathComponent("local.zip")
         let writer = try ZipWriter(url: source)

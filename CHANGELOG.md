@@ -4,6 +4,13 @@
 
 ### Fixed
 
+- **Quarantine did not reach directories the extractor created
+  implicitly** (#3), so an archive with no directory entries — 7-Zip writes
+  them that way routinely — produced a `.app` whose files each carried
+  `com.apple.quarantine` but whose bundle root, the thing Gatekeeper
+  actually evaluates, did not. `ditto` marks the bundle root; now so do we.
+  This was the ADR-012 §4 gap re-opening through a different door
+
 - **The pre-extraction free-space budget could be switched off from inside
   the archive** (#2). The declared total was summed with wrapping
   arithmetic, so two ZIP64 entries declaring 2^63 apiece summed to exactly

@@ -234,6 +234,22 @@ public enum Unpacker {
             XattrUtil.applyQuarantine(quarantine, to: root)
         }
 
+        // Every directory this extraction brings into existence, relative to
+        // `base` — including the ones `withIntermediateDirectories` creates
+        // on the way to a nested file. Quarantine has to reach these too:
+        // an archive with no directory entries (7-Zip writes them that way
+        // routinely, and an attacker would deliberately) otherwise yields a
+        // `.app` whose files are each quarantined but whose bundle root —
+        // the thing Gatekeeper evaluates — is not (ADR-012 §4).
+        var createdDirectories: Set<String> = []
+        func recordDirectories(_ components: some Collection<String>) {
+            var prefix: [String] = []
+            for component in components {
+                prefix.append(component)
+                createdDirectories.insert(prefix.joined(separator: "/"))
+            }
+        }
+
         func extractAll() throws {
             for (entry, rawComponents) in work {
                 if shouldCancel?() == true { throw CancellationError() }
@@ -249,10 +265,12 @@ public enum Unpacker {
 
                 if entry.isDirectory {
                     try FileManager.default.createDirectory(at: target, withIntermediateDirectories: true)
+                    recordDirectories(components)
                     directories += 1
                 } else {
                     try FileManager.default.createDirectory(
                         at: target.deletingLastPathComponent(), withIntermediateDirectories: true)
+                    recordDirectories(components.dropLast())
                     FileManager.default.createFile(atPath: target.path, contents: nil)
                     let out = try FileHandle(forWritingTo: target)
                     do {
@@ -292,6 +310,15 @@ public enum Unpacker {
 
         do {
             try extractAll()
+            if let quarantine {
+                // Directories last: the attribute survives writes into them,
+                // and doing it here covers implicit parents in one pass.
+                for path in createdDirectories {
+                    let url = path.split(separator: "/")
+                        .reduce(base) { $0.appendingPathComponent(String($1)) }
+                    XattrUtil.applyQuarantine(quarantine, to: url)
+                }
+            }
         } catch {
             // Never leave a half-written tree behind. Remove only the
             // top-level items this call created — `root` can be the

@@ -73,8 +73,10 @@ docs/{en,ja}/               RFP (design of record)
   and the space-budget check fire before any disk write; failed extractions
   clean up only what they created; per-entry output is bounded by the
   declared size (fail-fast); overlapping/past-EOF entry ranges are rejected
-  at open; `com.apple.quarantine` propagates to extracted items; duplicate
-  names are uniquified, never overwritten.
+  at open; `com.apple.quarantine` propagates to every extracted item,
+  **including directories created implicitly** on the way to a nested file
+  (an archive with no directory entries must not yield an unquarantined
+  `.app` bundle root); duplicate names are uniquified, never overwritten.
 - **Hostile fixtures live in `scripts/gen-hostile-fixtures.py`** — bombs,
   overlap, duplicates, truncation, malformed ZIP64 headers. Our own writer
   cannot produce these structures, which is the point: they are built from
