@@ -1,10 +1,37 @@
 import AppKit
 
 enum AppInfo {
-    /// The app's short version (from Info.plist), with any leading "v" stripped.
-    /// Falls back to "dev" when run without a bundle (e.g. `swift run`).
+    /// The app's short version (from Info.plist), with any leading "v"
+    /// stripped. Falls back to "dev" only when there is genuinely no bundle
+    /// (e.g. `swift run`).
     static var version: String {
-        normalize((Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String) ?? "dev")
+        if let value = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String,
+           !value.isEmpty {
+            return normalize(value)
+        }
+        // Launched through the Homebrew cask's symlink in bin/, Bundle.main
+        // is not the .app — read Info.plist relative to the real executable
+        // (…/Contents/MacOS/ZipPorter → …/Contents/Info.plist).
+        if let plist = infoPlistBesideExecutable(),
+           let value = plist["CFBundleShortVersionString"] as? String {
+            return normalize(value)
+        }
+        return "dev"
+    }
+
+    private static func infoPlistBesideExecutable() -> NSDictionary? {
+        let candidates = [
+            Bundle.main.executableURL,
+            URL(fileURLWithPath: CommandLine.arguments.first ?? ""),
+        ].compactMap { $0?.resolvingSymlinksInPath() }
+        for executable in candidates {
+            let plist = executable
+                .deletingLastPathComponent()   // MacOS/
+                .deletingLastPathComponent()   // Contents/
+                .appendingPathComponent("Info.plist")
+            if let dict = NSDictionary(contentsOf: plist) { return dict }
+        }
+        return nil
     }
 
     static func normalize(_ raw: String) -> String {

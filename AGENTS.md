@@ -27,7 +27,11 @@ make brew       # generate the Homebrew cask into ../homebrew-tap
 ```
 
 - `zip-porter --version` prints the version and exits before AppKit starts
-  (`brew test` depends on this).
+  (`brew test` depends on this). The cask symlinks the embedded CLI onto
+  PATH (`BREW_BINARY` in the Makefile); launched that way `Bundle.main` is
+  NOT the .app, so `AppInfo.version` falls back to the Info.plist beside
+  the resolved executable — keep that fallback or the symlink reports
+  "dev".
 - `scripts/gen-fixtures.sh` regenerates the benign `Tests/.../testdata`
   fixtures with external tools (zip, ditto, python3, 7zz —
   `brew install 7zip`); `scripts/gen-hostile-fixtures.py <dir>` regenerates
