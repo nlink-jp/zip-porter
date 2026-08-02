@@ -145,6 +145,35 @@ def zip64_size_overflow(path: str) -> None:
     print(f"wrote {path} ({os.path.getsize(path)} bytes)")
 
 
+def zip64_declared_size_wrap(path: str) -> None:
+    """Two entries whose declared uncompressed sizes sum to exactly 2**64.
+
+    Both are real (16-byte, stored) entries; only the ZIP64 extra field
+    lies. An extractor that sums declared sizes with wrapping arithmetic
+    computes a total of zero and lets the archive sail through the
+    free-space budget — the defence that is supposed to stop bombs whose
+    individual entries are each honest about their size.
+    """
+    declared = 1 << 63
+    body = b""
+    central = b""
+    names = (b"a.bin", b"b.bin")
+    for name in names:
+        data = b"X" * 16
+        crc = zlib.crc32(data) & 0xFFFFFFFF
+        offset = len(body)
+        local_extra = struct.pack("<2H2Q", 1, 16, declared, len(data))
+        body += struct.pack("<I5H3I2H", LOCAL_SIG, 45, 0, 0, DOSTIME, DOSDATE,
+                            crc, 0xFFFFFFFF, 0xFFFFFFFF,
+                            len(name), len(local_extra)) + name + local_extra + data
+        central_extra = struct.pack("<2H3Q", 1, 24, declared, len(data), offset)
+        central += struct.pack("<I6H3I5H2I", CENTRAL_SIG, (3 << 8) | 45, 45, 0, 0,
+                               DOSTIME, DOSDATE, crc, 0xFFFFFFFF, 0xFFFFFFFF,
+                               len(name), len(central_extra), 0, 0, 0,
+                               0, 0xFFFFFFFF) + name + central_extra
+    write_zip(path, body, central, len(names))
+
+
 def main() -> None:
     if len(sys.argv) != 2:
         sys.exit("usage: gen-hostile-fixtures.py <output-dir>")
@@ -156,6 +185,7 @@ def main() -> None:
     truncated_data(os.path.join(out, "hostile-truncated.zip"))
     zip64_locator_underflow(os.path.join(out, "hostile-zip64-locator-underflow.zip"))
     zip64_size_overflow(os.path.join(out, "hostile-zip64-size-overflow.zip"))
+    zip64_declared_size_wrap(os.path.join(out, "hostile-declared-size-wrap.zip"))
 
 
 if __name__ == "__main__":

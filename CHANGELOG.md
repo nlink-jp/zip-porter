@@ -4,6 +4,15 @@
 
 ### Fixed
 
+- **The pre-extraction free-space budget could be switched off from inside
+  the archive** (#2). The declared total was summed with wrapping
+  arithmetic, so two ZIP64 entries declaring 2^63 apiece summed to exactly
+  zero and the budget check approved anything. Since per-entry fail-fast
+  only bounds an entry by *its own* declared size, that left a decompression
+  bomb free to fill the volume. The sum now saturates at `UInt64.max`, and
+  the check subtracts the margin from the free space instead of adding it
+  to the requirement
+
 - **A malformed ZIP64 header crashed the process instead of being
   rejected** (#1). Two bounds checks in the central-directory parser did
   their own arithmetic on attacker-supplied 64-bit values: the ZIP64

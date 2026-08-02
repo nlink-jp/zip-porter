@@ -171,7 +171,11 @@ public enum Unpacker {
         // entry is honest about its own size (ADR-012 §2).
         let required = reader.declaredTotalSize
         if let available = freeSpace(at: destBase) {
-            guard required &+ Self.spaceMargin <= available else {
+            // Phrased as a subtraction from the free space: `required +
+            // margin` would wrap for a saturated total and turn the refusal
+            // into an approval.
+            let budget = available > Self.spaceMargin ? available - Self.spaceMargin : 0
+            guard required <= budget else {
                 throw Failure.insufficientSpace(required: required, available: available)
             }
         }

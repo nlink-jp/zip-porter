@@ -138,6 +138,26 @@ final class HardeningTests: XCTestCase {
         XCTAssertEqual(leftovers, [])
     }
 
+    func testDeclaredTotalThatWrapsIsSaturatedNotBelieved() throws {
+        // Two ZIP64 entries declaring 2^63 apiece: summed with wrapping
+        // arithmetic the total is exactly zero, and the budget check — the
+        // only thing standing between a bomb and the disk once every
+        // individual entry is honest about its own size — waves it through.
+        let archive = try fixture("hostile-declared-size-wrap")
+        let reader = try ZipReader(url: archive)
+        XCTAssertEqual(reader.entries.count, 2)
+        XCTAssertEqual(reader.declaredTotalSize, .max,
+                       "a total that cannot fit UInt64 must saturate, not wrap to a small number")
+
+        XCTAssertThrowsError(try Unpacker.unpack(zipURL: archive, options: unpackOptions())) { error in
+            guard case .insufficientSpace = error as? Unpacker.Failure else {
+                return XCTFail("expected insufficientSpace, got \(error)")
+            }
+        }
+        let leftovers = try FileManager.default.contentsOfDirectory(atPath: workDir.path)
+        XCTAssertEqual(leftovers, [], "a refused archive must leave nothing on disk")
+    }
+
     func testNormalArchivePassesTheBudgetCheck() throws {
         let ours = workDir.appendingPathComponent("small.zip")
         let writer = try ZipWriter(url: ours)

@@ -47,8 +47,18 @@ public final class ZipReader {
 
     /// Total uncompressed size the archive declares — the extraction
     /// budget checked against free space before writing (ADR-012 §2).
+    ///
+    /// The sum saturates rather than wraps. Two ZIP64 entries declaring
+    /// 2^63 each sum to exactly zero in wrapping arithmetic, which would
+    /// hand the budget check a total of "nothing" and wave the archive
+    /// through — the declaration is the only thing that check has to go on,
+    /// so a total that cannot fit UInt64 has to read as "more than any
+    /// volume holds", never as a small number.
     public var declaredTotalSize: UInt64 {
-        entries.reduce(UInt64(0)) { $0 &+ $1.uncompressedSize }
+        entries.reduce(UInt64(0)) { total, entry in
+            let (sum, overflowed) = total.addingReportingOverflow(entry.uncompressedSize)
+            return overflowed ? .max : sum
+        }
     }
 
     /// Reject archives whose entry byte ranges overlap or run past EOF.
