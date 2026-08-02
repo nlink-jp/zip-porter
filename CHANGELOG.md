@@ -4,6 +4,12 @@
 
 ### Fixed
 
+- **A failure to mark an extracted item as quarantined was silent** (#5),
+  and the result claimed propagation had happened as long as the *archive*
+  carried the attribute. Failures are now collected per item and reported
+  the way every other security-relevant outcome is: a warning line in the
+  CLI, and the result dialog (never the quiet notification) in the GUI
+
 - **Extraction applied the archive's permission bits verbatim** (#4), so an
   archive asking for `0777` produced world-writable — and executable —
   files in the user's folder. On a shared Mac another local account could

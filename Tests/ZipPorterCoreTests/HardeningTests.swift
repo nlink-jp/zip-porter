@@ -325,6 +325,45 @@ final class HardeningTests: XCTestCase {
         XCTAssertNil(XattrUtil.quarantine(of: result.root.appendingPathComponent("a.txt")))
     }
 
+    func testQuarantineFailuresAreReportedNotSwallowed() throws {
+        let source = workDir.appendingPathComponent("downloaded.zip")
+        let writer = try ZipWriter(url: source)
+        try writer.addFile("docs/a.txt", data: Data("A".utf8))
+        try writer.finalize()
+        XCTAssertTrue(XattrUtil.applyQuarantine(Data("0083;00000000;Safari;".utf8), to: source))
+
+        // Deny extended-attribute writes on the destination, inherited by
+        // everything created inside it — the same shape as extracting onto
+        // a volume that cannot carry xattrs.
+        let dest = workDir.appendingPathComponent("no-xattr")
+        try FileManager.default.createDirectory(at: dest, withIntermediateDirectories: true)
+        try XCTSkipUnless(denyExtendedAttributeWrites(at: dest), "could not apply the deny ACL")
+
+        var options = Unpacker.Options()
+        options.destination = dest
+        let result = try Unpacker.unpack(zipURL: source, options: options)
+
+        XCTAssertFalse(result.quarantinePropagated,
+                       "propagation must not be claimed when the attribute would not take")
+        XCTAssertTrue(result.quarantineFailures.contains("docs/a.txt"),
+                      "the failed item must be named: \(result.quarantineFailures)")
+        XCTAssertTrue(result.quarantineFailures.contains("docs"),
+                      "directories count too: \(result.quarantineFailures)")
+    }
+
+    /// `chmod +a` with inheritance: the cheapest way to make `setxattr`
+    /// fail on files this process owns.
+    private func denyExtendedAttributeWrites(at url: URL) -> Bool {
+        let chmod = Process()
+        chmod.executableURL = URL(fileURLWithPath: "/bin/chmod")
+        chmod.arguments = ["+a",
+                           "\(NSUserName()) deny writeextattr,file_inherit,directory_inherit",
+                           url.path]
+        do { try chmod.run() } catch { return false }
+        chmod.waitUntilExit()
+        return chmod.terminationStatus == 0
+    }
+
     func testWrapperFolderInheritsQuarantine() throws {
         let source = workDir.appendingPathComponent("multi.zip")
         let writer = try ZipWriter(url: source)

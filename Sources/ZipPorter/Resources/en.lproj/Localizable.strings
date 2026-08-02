@@ -59,6 +59,7 @@
 "Skipped entries with unsafe paths:" = "Skipped entries with unsafe paths:";
 "Skipped symbolic links:" = "Skipped symbolic links:";
 "Duplicate names were extracted under new names:" = "Duplicate names were extracted under new names:";
+"These items could not be marked as downloaded, so macOS will not check them:" = "These items could not be marked as downloaded, so macOS will not check them:";
 "Reveal the created archive in Finder" = "Reveal the created archive in Finder";
 "Done" = "Done";
 "Archive created" = "Archive created";

@@ -212,6 +212,9 @@ enum CLIRun {
             for rename in result.renamedDuplicates {
                 warn("duplicate entry '\(rename.original)' extracted as '\(rename.chosen)'")
             }
+            for name in result.quarantineFailures {
+                warn("could not mark '\(name)' as quarantined — Gatekeeper will not check it")
+            }
             print("\(result.root.path): \(result.extractedFiles) files (names: \(result.detectedEncoding.rawValue))")
             exit(0)
         } catch let error as ZipReaderError {

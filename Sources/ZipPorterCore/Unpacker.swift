@@ -41,9 +41,14 @@ public enum Unpacker {
         /// Entries whose names collided with an earlier entry and were
         /// extracted under a numbered name ("original" → "chosen").
         public var renamedDuplicates: [(original: String, chosen: String)]
-        /// True when the archive's quarantine attribute was propagated to
-        /// the extracted files.
+        /// True when the archive carried a quarantine attribute and it was
+        /// applied to every item extracted from it.
         public var quarantinePropagated: Bool
+        /// Items the quarantine attribute could not be set on. Non-empty
+        /// means part of what was extracted is invisible to Gatekeeper —
+        /// a security-relevant outcome, so it is reported rather than
+        /// swallowed (ADR-012).
+        public var quarantineFailures: [String]
         public var detectedEncoding: NameEncoding
     }
 
@@ -230,8 +235,17 @@ public enum Unpacker {
         // write from them must carry it too, or Gatekeeper never sees the
         // contents (ADR-012 §4).
         let quarantine = XattrUtil.quarantine(of: zipURL)
-        if let quarantine, wrap {
-            XattrUtil.applyQuarantine(quarantine, to: root)
+        var quarantineFailures: [String] = []
+        /// Apply the attribute and remember the item if it would not take —
+        /// a silent failure here is a Gatekeeper bypass nobody hears about.
+        func applyQuarantine(to url: URL, named name: String) {
+            guard let quarantine else { return }
+            if !XattrUtil.applyQuarantine(quarantine, to: url) {
+                quarantineFailures.append(name)
+            }
+        }
+        if wrap {
+            applyQuarantine(to: root, named: root.lastPathComponent)
         }
 
         // Every directory this extraction brings into existence, relative to
@@ -304,22 +318,18 @@ public enum Unpacker {
                 if !attrs.isEmpty {
                     try? FileManager.default.setAttributes(attrs, ofItemAtPath: target.path)
                 }
-                if let quarantine {
-                    XattrUtil.applyQuarantine(quarantine, to: target)
-                }
+                applyQuarantine(to: target, named: entryPath)
             }
         }
 
         do {
             try extractAll()
-            if let quarantine {
-                // Directories last: the attribute survives writes into them,
-                // and doing it here covers implicit parents in one pass.
-                for path in createdDirectories {
-                    let url = path.split(separator: "/")
-                        .reduce(base) { $0.appendingPathComponent(String($1)) }
-                    XattrUtil.applyQuarantine(quarantine, to: url)
-                }
+            // Directories last: the attribute survives writes into them,
+            // and doing it here covers implicit parents in one pass.
+            for path in createdDirectories.sorted() {
+                let url = path.split(separator: "/")
+                    .reduce(base) { $0.appendingPathComponent(String($1)) }
+                applyQuarantine(to: url, named: path)
             }
         } catch {
             // Never leave a half-written tree behind. Remove only the
@@ -340,7 +350,8 @@ public enum Unpacker {
             skippedUnsafe: skippedUnsafe,
             skippedSymlinks: skippedSymlinks,
             renamedDuplicates: renamedDuplicates,
-            quarantinePropagated: quarantine != nil,
+            quarantinePropagated: quarantine != nil && quarantineFailures.isEmpty,
+            quarantineFailures: quarantineFailures,
             detectedEncoding: options.forcedEncoding ?? reader.detectedEncoding)
     }
 }

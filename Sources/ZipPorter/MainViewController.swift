@@ -493,6 +493,12 @@ final class MainViewController: NSViewController, DropViewDelegate {
                 + result.renamedDuplicates.prefix(6)
                     .map { "  \($0.original) → \($0.chosen)" }.joined(separator: "\n"))
         }
+        if !result.quarantineFailures.isEmpty {
+            // Gatekeeper will not evaluate what we failed to mark — the one
+            // outcome the user cannot discover any other way.
+            lines.append(L("These items could not be marked as downloaded, so macOS will not check them:")
+                + "\n" + result.quarantineFailures.prefix(6).map { "  \($0)" }.joined(separator: "\n"))
+        }
         return lines
     }
 

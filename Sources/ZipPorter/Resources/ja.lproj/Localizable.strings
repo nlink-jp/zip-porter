@@ -59,6 +59,7 @@
 "Skipped entries with unsafe paths:" = "安全でないパスのエントリをスキップしました:";
 "Skipped symbolic links:" = "シンボリックリンクをスキップしました:";
 "Duplicate names were extracted under new names:" = "重複する名前は別名で展開しました:";
+"These items could not be marked as downloaded, so macOS will not check them:" = "次の項目にダウンロード済みの印を付けられませんでした。macOS による確認が行われません:";
 "Reveal the created archive in Finder" = "作成したアーカイブを Finder に表示";
 "Done" = "閉じる";
 "Archive created" = "アーカイブを作成しました";
