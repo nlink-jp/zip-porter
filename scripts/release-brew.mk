@@ -16,6 +16,8 @@
 #     BREW_APP       := $(APP).app
 #     BREW_BUNDLE_ID := com.example.name
 #     BREW_MACOS_FLOOR := :tahoe        # optional; default :big_sur
+#     BREW_BINARY      := my-tool        # optional; symlinks the .app's
+#     BREW_BINARY_EXE  := MyTool         #   embedded CLI onto the user's PATH
 #     include scripts/release-brew.mk
 #
 # Then, after `make package` (which produces the signed + notarized zip):
