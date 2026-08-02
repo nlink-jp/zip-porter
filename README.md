@@ -128,8 +128,13 @@ extraction refuses malformed archives rather than trying to salvage them
 - **Overlapping entries** — archives whose entries share compressed data
   (the `42.zip` construction) are rejected while parsing
 - **Quarantine propagation** — `com.apple.quarantine` on a downloaded
-  archive is copied onto everything extracted, so Gatekeeper still
-  evaluates executables that arrive inside a ZIP
+  archive is copied onto everything extracted — files and folders alike,
+  including folders the archive only implies — so Gatekeeper still
+  evaluates an app that arrives inside a ZIP. If the attribute cannot be
+  set, the items are named in the result rather than passed over
+- **Permissions** — the modes an archive asks for are masked with your
+  umask, the way `unzip` does it, so a ZIP cannot drop world-writable
+  files into your folders
 - **Duplicate names** — collisions (including case-only and NFC/NFD
   differences, which APFS treats as one name) are extracted under numbered
   names instead of silently overwriting each other
