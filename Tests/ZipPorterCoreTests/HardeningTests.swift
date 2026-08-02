@@ -83,6 +83,34 @@ final class HardeningTests: XCTestCase {
         XCTAssertNoThrow(try ZipReader(url: ours))
     }
 
+    // MARK: - Malformed ZIP64 headers
+    //
+    // Both fixtures are shaped to make a reader compute an out-of-range file
+    // offset *while checking whether it is in range*. What these tests assert
+    // is really that the process survives: an unchecked UInt64 subtraction or
+    // addition here is a trap, and a trap in the parser takes the GUI down
+    // with a double-clicked .zip.
+
+    func testZip64LocatorBeforeFileStartIsRejected() throws {
+        // 22-byte file: an EOCD at offset 0 claiming ZIP64, so the locator
+        // would live at offset -20.
+        XCTAssertThrowsError(try ZipReader(url: try fixture("hostile-zip64-locator-underflow"))) { error in
+            guard case .corrupt = error as? ZipReaderError else {
+                return XCTFail("expected corrupt, got \(error)")
+            }
+        }
+    }
+
+    func testZip64CentralDirectoryBoundsThatOverflowAreRejected() throws {
+        // cdSize + cdOffset wraps UInt64; the directory is nowhere near the
+        // 98-byte file either way.
+        XCTAssertThrowsError(try ZipReader(url: try fixture("hostile-zip64-size-overflow"))) { error in
+            guard case .corrupt = error as? ZipReaderError else {
+                return XCTFail("expected corrupt, got \(error)")
+            }
+        }
+    }
+
     func testTruncatedArchiveIsRejected() throws {
         // Header promises 1 MiB of data in a 124-byte file.
         XCTAssertThrowsError(try ZipReader(url: try fixture("hostile-truncated"))) { error in

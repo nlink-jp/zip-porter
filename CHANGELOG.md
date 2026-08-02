@@ -2,6 +2,17 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- **A malformed ZIP64 header crashed the process instead of being
+  rejected** (#1). Two bounds checks in the central-directory parser did
+  their own arithmetic on attacker-supplied 64-bit values: the ZIP64
+  locator address (`eocd - 20`, underflowing on a 22-byte file whose EOCD
+  claims ZIP64) and the directory bounds (`cdOffset + cdSize`, overflowing
+  while checking themselves). Both trapped, taking the GUI down on a
+  double-clicked `.zip`. The checks now subtract from the file size instead
+  of adding to the offsets, and two hostile fixtures cover the shapes
+
 ## [v0.9.3] - 2026-08-02
 
 ### Fixed

@@ -76,8 +76,9 @@ docs/{en,ja}/               RFP (design of record)
   at open; `com.apple.quarantine` propagates to extracted items; duplicate
   names are uniquified, never overwritten.
 - **Hostile fixtures live in `scripts/gen-hostile-fixtures.py`** — bombs,
-  overlap, duplicates, truncation. Our own writer cannot produce these
-  structures, which is the point: they are built from the format spec.
+  overlap, duplicates, truncation, malformed ZIP64 headers. Our own writer
+  cannot produce these structures, which is the point: they are built from
+  the format spec.
 - **Packing compresses in parallel and writes sequentially** (ADR-013).
   Entry order comes from `Packer`'s sort, so output stays byte-for-byte
   deterministic — there is a test for that; keep it. Encryption stays in
@@ -123,6 +124,12 @@ docs/{en,ja}/               RFP (design of record)
 - **Extracted names become NFD on disk** (Foundation's fileSystemRepresentation
   decomposes). Byte-level name comparisons in tests must normalize; APFS
   resolves both forms to the same file, so users are unaffected.
+- **Never do arithmetic on header values inside a bounds check.** Offsets
+  and sizes out of a ZIP64 record are attacker-chosen 64-bit values, so
+  `offset + size <= fileSize` overflows while evaluating itself and
+  `eocd - 20` underflows on a tiny file — both are Swift traps, i.e. a
+  crash on a double-clicked `.zip`. Subtract from the known-good bound
+  instead (`size <= fileSize - offset`), or check the operand first.
 - **Local-header name/extra lengths can differ from the central directory's**
   — data offsets must be computed from the local copies; sizes/CRC from the
   central directory (authoritative).

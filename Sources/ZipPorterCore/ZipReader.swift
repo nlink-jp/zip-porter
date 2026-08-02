@@ -117,9 +117,14 @@ public final class ZipReader {
         var cdOffset = UInt64(tail.readU32(at: eocd + 16))
 
         if totalEntries == 0xFFFF || cdSize == 0xFFFF_FFFF || cdOffset == 0xFFFF_FFFF {
-            // ZIP64: locator sits immediately before the EOCD.
-            let locatorAbs = tailStart + UInt64(eocd) - 20
-            let locator = try read(at: locatorAbs, count: 20)
+            // ZIP64: locator sits immediately before the EOCD. A file whose
+            // EOCD starts within 20 bytes of the front has nowhere to put
+            // one — subtracting first would trap on UInt64 underflow.
+            let eocdAbs = tailStart + UInt64(eocd)
+            guard eocdAbs >= 20 else {
+                throw ZipReaderError.corrupt("ZIP64 locator missing")
+            }
+            let locator = try read(at: eocdAbs - 20, count: 20)
             guard locator.readU32(at: 0) == Zip.zip64LocatorSignature else {
                 throw ZipReaderError.corrupt("ZIP64 locator missing")
             }
@@ -135,8 +140,11 @@ public final class ZipReader {
 
         // 256 MiB ceiling: a million entries occupy roughly 100 MB of
         // central directory, so this stays far above real archives while
-        // bounding the pre-extraction allocation (ADR-012).
-        guard cdOffset + cdSize <= fileSize, cdSize <= 256 << 20 else {
+        // bounding the pre-extraction allocation (ADR-012). The bounds are
+        // phrased as subtractions from fileSize because a ZIP64 record can
+        // declare values whose *sum* overflows UInt64 — computing
+        // `cdOffset + cdSize` to check them would trap before the check runs.
+        guard cdSize <= 256 << 20, cdOffset <= fileSize, cdSize <= fileSize - cdOffset else {
             throw ZipReaderError.corrupt("central directory out of bounds")
         }
         let cd = try read(at: cdOffset, count: Int(cdSize))

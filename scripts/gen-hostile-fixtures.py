@@ -16,6 +16,8 @@ import zlib
 LOCAL_SIG = 0x04034B50
 CENTRAL_SIG = 0x02014B50
 EOCD_SIG = 0x06054B50
+ZIP64_EOCD_SIG = 0x06064B50
+ZIP64_LOCATOR_SIG = 0x07064B50
 DOSTIME, DOSDATE = 0x6F3C, 0x5B01  # fixed timestamp — fixtures stay byte-stable
 
 
@@ -118,6 +120,31 @@ def truncated_data(path: str) -> None:
     write_zip(path, body, central, 1)
 
 
+def zip64_locator_underflow(path: str) -> None:
+    """22 bytes: an EOCD at offset 0 that claims to be ZIP64.
+
+    The ZIP64 locator is defined to sit 20 bytes before the EOCD, which here
+    would be a negative file offset. A reader that computes that address
+    before checking it underflows.
+    """
+    with open(path, "wb") as f:
+        f.write(eocd(0xFFFF, 0, 0))
+    print(f"wrote {path} ({os.path.getsize(path)} bytes)")
+
+
+def zip64_size_overflow(path: str) -> None:
+    """A well-formed ZIP64 locator whose central-directory size and offset
+    sum past UInt64. A bounds check written as `offset + size <= fileSize`
+    overflows while evaluating itself.
+    """
+    z64 = struct.pack("<IQ2H2I4Q", ZIP64_EOCD_SIG, 44, (3 << 8) | 45, 45, 0, 0,
+                      0, 0, 0xFFFFFFFFFFFFFF00, 0x100)
+    locator = struct.pack("<2IQI", ZIP64_LOCATOR_SIG, 0, 0, 1)
+    with open(path, "wb") as f:
+        f.write(z64 + locator + eocd(0xFFFF, 0xFFFFFFFF, 0xFFFFFFFF))
+    print(f"wrote {path} ({os.path.getsize(path)} bytes)")
+
+
 def main() -> None:
     if len(sys.argv) != 2:
         sys.exit("usage: gen-hostile-fixtures.py <output-dir>")
@@ -127,6 +154,8 @@ def main() -> None:
     overlap_bomb(os.path.join(out, "hostile-overlap.zip"))
     duplicate_names(os.path.join(out, "hostile-duplicate-names.zip"))
     truncated_data(os.path.join(out, "hostile-truncated.zip"))
+    zip64_locator_underflow(os.path.join(out, "hostile-zip64-locator-underflow.zip"))
+    zip64_size_overflow(os.path.join(out, "hostile-zip64-size-overflow.zip"))
 
 
 if __name__ == "__main__":
