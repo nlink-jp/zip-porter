@@ -102,6 +102,15 @@ docs/{en,ja}/               RFP (design of record)
 
 ## Gotchas
 
+- **Never use SwiftPM's `Bundle.module`; use `Bundle.appResources`.** The
+  generated `Bundle.module` accessor only tries `<name>.bundle` beside
+  `Bundle.main.bundleURL` (the `.app` root, not `Contents/Resources`) and
+  then an absolute `.build` path baked in at compile time. Both resolve on
+  the build machine and neither resolves anywhere else, so it trapped at
+  launch on every fresh install through v0.10.0. `ResourceBundleLocator`
+  searches the app layout first and degrades to English instead of
+  trapping. This class of bug is invisible locally — verify a packaged
+  build with the `.build` resource bundles moved aside.
 - **Encoding detection order is UTF-8-first** (flag > UTF-8 validation >
   CP932). CP932-first looks right but silently mojibakes unflagged UTF-8
   archives — UTF-8 Japanese bytes usually "succeed" as CP932; the reverse

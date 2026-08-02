@@ -2,6 +2,17 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- The app no longer crashes at launch on any machine other than the one
+  that built it. SwiftPM's generated `Bundle.module` looks for the
+  localization bundle beside the `.app`, never in `Contents/Resources`
+  where it is installed, and then falls back to an absolute `.build`
+  path baked in at compile time — so on a fresh install both lookups
+  missed and the first localized string trapped (`EXC_BREAKPOINT`).
+  The resource bundle is now located with an app-aware search that falls
+  back to English strings instead of trapping.
+
 ## [v0.10.0] - 2026-08-02
 
 A security review of the extractor, and the five defects it found. Two of

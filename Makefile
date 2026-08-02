@@ -47,9 +47,10 @@ build-app: build
 	@rm -rf $(APP_BUNDLE)
 	@mkdir -p $(APP_BUNDLE)/Contents/MacOS $(APP_BUNDLE)/Contents/Resources
 	@cp $(BUILD_DIR)/$(APP_NAME) $(APP_BUNDLE)/Contents/MacOS/
-	@# SPM resource bundles (en/ja localizations, added in the GUI phase) —
-	@# Bundle.module finds them in Contents/Resources. Guarded: the scaffold
-	@# has no resource bundles yet.
+	@# SPM resource bundles (en/ja localizations, added in the GUI phase).
+	@# SwiftPM's own Bundle.module does NOT look here — see
+	@# Sources/ZipPorter/ResourceBundle.swift, which is what actually finds
+	@# them. Guarded: the scaffold has no resource bundles yet.
 	@if ls $(BUILD_DIR)/$(APP_NAME)_*.bundle >/dev/null 2>&1; then \
 		cp -R $(BUILD_DIR)/$(APP_NAME)_*.bundle $(APP_BUNDLE)/Contents/Resources/; \
 	fi
