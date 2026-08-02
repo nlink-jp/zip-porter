@@ -47,7 +47,8 @@ Makefile                    build / build-app / package / brew
 Sources/ZipPorterCore/      UI-independent engine (no AppKit): CRC32, DOSDateTime,
                             ZipStructures, DeflateStream, ZipReader, ZipWriter,
                             ZipCryptoCipher, WinZipAES, EncodingDetector,
-                            JunkFilter, FileNameTransform, Packer, Unpacker, PathUtil
+                            JunkFilter, FileNameTransform, Packer, Unpacker, PathUtil,
+                            PosixPermissions, XattrUtil
 Sources/ZipPorter/          AppKit app + CLI: App (entry/routing/delegate), CLI (usage),
                             CLICommands (parse + run), PasswordPrompt, MainMenu,
                             MainViewController (flows), DropView, Sheets (options/

@@ -4,6 +4,13 @@
 
 ### Fixed
 
+- **Extraction applied the archive's permission bits verbatim** (#4), so an
+  archive asking for `0777` produced world-writable — and executable —
+  files in the user's folder. On a shared Mac another local account could
+  rewrite them. The requested mode is now masked with the process umask,
+  the rule `unzip` and `ditto` follow (`0777` → `0755`, `0666` → `0644`
+  under the default umask); setuid/setgid never survived and still do not
+
 - **Quarantine did not reach directories the extractor created
   implicitly** (#3), so an archive with no directory entries — 7-Zip writes
   them that way routinely — produced a `.app` whose files each carried

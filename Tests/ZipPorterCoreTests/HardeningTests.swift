@@ -250,6 +250,25 @@ final class HardeningTests: XCTestCase {
         XCTAssertEqual(Set(contents).count, 5, "each entry's data must survive: \(contents)")
     }
 
+    // MARK: - Permission bits
+
+    func testArchiveModesAreMaskedByTheUmask() throws {
+        // The fixture asks for 0777 and 0666. Whatever the umask on the
+        // machine running this, nothing group- or world-writable may land.
+        let result = try Unpacker.unpack(zipURL: try fixture("hostile-world-writable"),
+                                         options: unpackOptions())
+        for (name, requested) in [("tool.sh", UInt16(0o777)), ("secret.txt", UInt16(0o666))] {
+            let path = result.root.appendingPathComponent(name).path
+            let mode = try XCTUnwrap(
+                (FileManager.default.attributesOfItem(atPath: path)[.posixPermissions] as? NSNumber)?
+                    .uint16Value)
+            XCTAssertEqual(mode, PosixPermissions.extracted(mode: requested, isDirectory: false),
+                           "\(name): got \(String(mode, radix: 8))")
+            XCTAssertEqual(mode & UInt16(0o022), 0,
+                           "\(name) must not be group- or world-writable")
+        }
+    }
+
     // MARK: - Quarantine propagation (ADR-012 §4)
 
     func testQuarantineIsPropagatedToExtractedFiles() throws {

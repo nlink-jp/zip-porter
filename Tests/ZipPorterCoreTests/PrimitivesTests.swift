@@ -43,6 +43,42 @@ final class DOSDateTimeTests: XCTestCase {
     }
 }
 
+final class PosixPermissionsTests: XCTestCase {
+    func testUmaskRemovesGroupAndOtherWrite() {
+        XCTAssertEqual(PosixPermissions.extracted(mode: 0o777, isDirectory: false, umask: 0o022), 0o755)
+        XCTAssertEqual(PosixPermissions.extracted(mode: 0o666, isDirectory: false, umask: 0o022), 0o644)
+        XCTAssertEqual(PosixPermissions.extracted(mode: 0o777, isDirectory: true, umask: 0o022), 0o755)
+    }
+
+    func testStricterUmaskIsHonoured() {
+        XCTAssertEqual(PosixPermissions.extracted(mode: 0o777, isDirectory: false, umask: 0o077), 0o700)
+        XCTAssertEqual(PosixPermissions.extracted(mode: 0o777, isDirectory: false, umask: 0o027), 0o750)
+    }
+
+    func testSetuidAndFriendsNeverSurvive() {
+        // 0o4777: setuid + world-everything.
+        XCTAssertEqual(PosixPermissions.extracted(mode: 0o4777, isDirectory: false, umask: 0o022), 0o755)
+        XCTAssertEqual(PosixPermissions.extracted(mode: 0o2777, isDirectory: false, umask: 0), 0o777)
+    }
+
+    func testOwnerFloorKeepsTheResultReachable() {
+        // An entry asking for 0o000 must still leave the user able to read
+        // the file and enter the directory.
+        XCTAssertEqual(PosixPermissions.extracted(mode: 0, isDirectory: false, umask: 0o022), 0o600)
+        XCTAssertEqual(PosixPermissions.extracted(mode: 0, isDirectory: true, umask: 0o022), 0o700)
+    }
+
+    func testProcessUmaskIsReadWithoutChangingIt() {
+        let before = umask(0o022)
+        umask(before)
+        XCTAssertEqual(PosixPermissions.umask, UInt16(before),
+                       "the cached value must match the live umask")
+        let after = umask(0o022)
+        umask(after)
+        XCTAssertEqual(after, before, "reading the umask must leave it as it was")
+    }
+}
+
 final class BinaryHelperTests: XCTestCase {
     func testLittleEndianRoundTrip() {
         var d = Data()

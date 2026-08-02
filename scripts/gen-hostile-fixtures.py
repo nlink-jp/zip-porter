@@ -120,6 +120,28 @@ def truncated_data(path: str) -> None:
     write_zip(path, body, central, 1)
 
 
+def world_writable_modes(path: str) -> None:
+    """Entries declaring 0777 and 0666 in the Unix mode field.
+
+    An extractor that copies the archive's bits verbatim drops group- and
+    world-writable files — one of them executable — into the user's folder.
+    unzip and ditto apply the process umask instead.
+    """
+    entries = [(b"tool.sh", b"#!/bin/sh\necho hi\n", 0o100777),
+               (b"secret.txt", b"private\n", 0o100666)]
+    body = b""
+    central = b""
+    for name, data, mode in entries:
+        crc = zlib.crc32(data) & 0xFFFFFFFF
+        offset = len(body)
+        body += local_header(name, crc, len(data), len(data), 0) + data
+        header = bytearray(central_header(name, crc, len(data), len(data), 0, offset))
+        struct.pack_into("<H", header, 4, (3 << 8) | 20)  # version made by: Unix
+        struct.pack_into("<I", header, 38, mode << 16)    # external attributes
+        central += bytes(header)
+    write_zip(path, body, central, len(entries))
+
+
 def zip64_locator_underflow(path: str) -> None:
     """22 bytes: an EOCD at offset 0 that claims to be ZIP64.
 
@@ -186,6 +208,7 @@ def main() -> None:
     zip64_locator_underflow(os.path.join(out, "hostile-zip64-locator-underflow.zip"))
     zip64_size_overflow(os.path.join(out, "hostile-zip64-size-overflow.zip"))
     zip64_declared_size_wrap(os.path.join(out, "hostile-declared-size-wrap.zip"))
+    world_writable_modes(os.path.join(out, "hostile-world-writable.zip"))
 
 
 if __name__ == "__main__":

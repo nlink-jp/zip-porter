@@ -295,9 +295,11 @@ public enum Unpacker {
                     attrs[.modificationDate] = mtime
                 }
                 if let mode = entry.unixMode {
-                    // Keep sane bits only, and never lock ourselves out.
-                    let perms = (mode & 0o777) | (entry.isDirectory ? 0o700 : 0o600)
-                    attrs[.posixPermissions] = NSNumber(value: perms)
+                    // The archive asks; the umask decides. Owner bits are
+                    // kept so we never lock ourselves out.
+                    attrs[.posixPermissions] = NSNumber(
+                        value: PosixPermissions.extracted(mode: mode,
+                                                          isDirectory: entry.isDirectory))
                 }
                 if !attrs.isEmpty {
                     try? FileManager.default.setAttributes(attrs, ofItemAtPath: target.path)
