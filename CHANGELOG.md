@@ -2,6 +2,13 @@
 
 ## [Unreleased]
 
+## [v0.10.0] - 2026-08-02
+
+A security review of the extractor, and the five defects it found. Two of
+them were crashes on malformed input; two were holes in guarantees the app
+already claimed (Gatekeeper propagation, "never overwrite"); one let an
+archive decide the permissions of the files it dropped on you.
+
 ### Changed
 
 - **Hardening pass over the unchecked arithmetic and boundaries the two
@@ -15,25 +22,14 @@
 
 ### Fixed
 
-- **A failure to mark an extracted item as quarantined was silent** (#5),
-  and the result claimed propagation had happened as long as the *archive*
-  carried the attribute. Failures are now collected per item and reported
-  the way every other security-relevant outcome is: a warning line in the
-  CLI, and the result dialog (never the quiet notification) in the GUI
-
-- **Extraction applied the archive's permission bits verbatim** (#4), so an
-  archive asking for `0777` produced world-writable — and executable —
-  files in the user's folder. On a shared Mac another local account could
-  rewrite them. The requested mode is now masked with the process umask,
-  the rule `unzip` and `ditto` follow (`0777` → `0755`, `0666` → `0644`
-  under the default umask); setuid/setgid never survived and still do not
-
-- **Quarantine did not reach directories the extractor created
-  implicitly** (#3), so an archive with no directory entries — 7-Zip writes
-  them that way routinely — produced a `.app` whose files each carried
-  `com.apple.quarantine` but whose bundle root, the thing Gatekeeper
-  actually evaluates, did not. `ditto` marks the bundle root; now so do we.
-  This was the ADR-012 §4 gap re-opening through a different door
+- **A malformed ZIP64 header crashed the process instead of being
+  rejected** (#1). Two bounds checks in the central-directory parser did
+  their own arithmetic on attacker-supplied 64-bit values: the ZIP64
+  locator address (`eocd - 20`, underflowing on a 22-byte file whose EOCD
+  claims ZIP64) and the directory bounds (`cdOffset + cdSize`, overflowing
+  while checking themselves). Both trapped, taking the GUI down on a
+  double-clicked `.zip`. The checks now subtract from the file size instead
+  of adding to the offsets, and two hostile fixtures cover the shapes
 
 - **The pre-extraction free-space budget could be switched off from inside
   the archive** (#2). The declared total was summed with wrapping
@@ -44,14 +40,25 @@
   the check subtracts the margin from the free space instead of adding it
   to the requirement
 
-- **A malformed ZIP64 header crashed the process instead of being
-  rejected** (#1). Two bounds checks in the central-directory parser did
-  their own arithmetic on attacker-supplied 64-bit values: the ZIP64
-  locator address (`eocd - 20`, underflowing on a 22-byte file whose EOCD
-  claims ZIP64) and the directory bounds (`cdOffset + cdSize`, overflowing
-  while checking themselves). Both trapped, taking the GUI down on a
-  double-clicked `.zip`. The checks now subtract from the file size instead
-  of adding to the offsets, and two hostile fixtures cover the shapes
+- **Quarantine did not reach directories the extractor created
+  implicitly** (#3), so an archive with no directory entries — 7-Zip writes
+  them that way routinely — produced a `.app` whose files each carried
+  `com.apple.quarantine` but whose bundle root, the thing Gatekeeper
+  actually evaluates, did not. `ditto` marks the bundle root; now so do we.
+  This was the ADR-012 §4 gap re-opening through a different door
+
+- **Extraction applied the archive's permission bits verbatim** (#4), so an
+  archive asking for `0777` produced world-writable — and executable —
+  files in the user's folder. On a shared Mac another local account could
+  rewrite them. The requested mode is now masked with the process umask,
+  the rule `unzip` and `ditto` follow (`0777` → `0755`, `0666` → `0644`
+  under the default umask); setuid/setgid never survived and still do not
+
+- **A failure to mark an extracted item as quarantined was silent** (#5),
+  and the result claimed propagation had happened as long as the *archive*
+  carried the attribute. Failures are now collected per item and reported
+  the way every other security-relevant outcome is: a warning line in the
+  CLI, and the result dialog (never the quiet notification) in the GUI
 
 ## [v0.9.3] - 2026-08-02
 
@@ -346,7 +353,8 @@ instead of consuming resources or silently losing data.
   reveal in Finder, move archive to Trash
 - en/ja localization; app icon
 
-[Unreleased]: https://github.com/nlink-jp/zip-porter/compare/v0.9.3...HEAD
+[Unreleased]: https://github.com/nlink-jp/zip-porter/compare/v0.10.0...HEAD
+[v0.10.0]: https://github.com/nlink-jp/zip-porter/compare/v0.9.3...v0.10.0
 [v0.9.3]: https://github.com/nlink-jp/zip-porter/compare/v0.9.2...v0.9.3
 [v0.9.2]: https://github.com/nlink-jp/zip-porter/compare/v0.9.1...v0.9.2
 [v0.9.1]: https://github.com/nlink-jp/zip-porter/compare/v0.9.0...v0.9.1
