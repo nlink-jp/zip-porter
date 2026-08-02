@@ -2,6 +2,18 @@
 
 ## [Unreleased]
 
+## [v0.9.1] - 2026-08-02
+
+### Changed
+
+- **Excluded macOS metadata is reported in the completion line, not a
+  dialog.** Dropping `.DS_Store` and friends is what this app is for —
+  routine, not a warning — so it no longer forces the result dialog on
+  every pack of a folder Finder has ever opened. It now rides along in the
+  notification (or dialog, or nothing) chosen in Settings. Skipped
+  symlinks, unsafe paths and renamed duplicates are real deviations and
+  still force the dialog
+
 ## [v0.9.0] - 2026-08-01
 
 ### Added
@@ -261,7 +273,8 @@ instead of consuming resources or silently losing data.
   reveal in Finder, move archive to Trash
 - en/ja localization; app icon
 
-[Unreleased]: https://github.com/nlink-jp/zip-porter/compare/v0.9.0...HEAD
+[Unreleased]: https://github.com/nlink-jp/zip-porter/compare/v0.9.1...HEAD
+[v0.9.1]: https://github.com/nlink-jp/zip-porter/compare/v0.9.0...v0.9.1
 [v0.9.0]: https://github.com/nlink-jp/zip-porter/compare/v0.8.3...v0.9.0
 [v0.8.3]: https://github.com/nlink-jp/zip-porter/compare/v0.8.2...v0.8.3
 [v0.8.2]: https://github.com/nlink-jp/zip-porter/compare/v0.8.1...v0.8.2

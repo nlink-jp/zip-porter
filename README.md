@@ -44,7 +44,8 @@ Launch ZipPorter and drop things on the window:
   while they run. How a clean finish is announced is up to you — a
   notification (default), a dialog, or nothing (Settings › General). The
   result dialog appears regardless when something needs reading — skipped
-  unsafe paths, renamed duplicates, and the like. A ZIP being created
+  unsafe paths, skipped symlinks, renamed duplicates. Excluded macOS
+  metadata is routine and just goes in the completion line. A ZIP being created
   exists as `name.zip.part` until it is complete. An
   archive opened by double-click shows only that dialog — no droplet
   window — and quits the app once you dismiss it; dropping onto the window

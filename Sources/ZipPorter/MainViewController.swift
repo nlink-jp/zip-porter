@@ -264,18 +264,22 @@ final class MainViewController: NSViewController, DropViewDelegate {
                     progress: { forwarder.forward($0) },
                     shouldCancel: { flag.isCancelled })
                 DispatchQueue.main.async {
+                    // Excluding macOS metadata is what this app is FOR —
+                    // routine, not a warning — so it rides along in the
+                    // completion line rather than forcing a dialog. Skipped
+                    // symlinks are a real deviation and still do.
                     var notes: [String] = []
-                    if !result.skippedJunk.isEmpty {
-                        notes.append(L("Excluded macOS metadata files:")
-                            + " \(result.skippedJunk.count)")
-                    }
                     if !result.skippedSymlinks.isEmpty {
                         notes.append(L("Skipped symbolic links:")
                             + " \(result.skippedSymlinks.count)")
                     }
-                    let summary = result.outputURL.lastPathComponent + "\n"
+                    var summary = result.outputURL.lastPathComponent + "\n"
                         + Self.itemCount(files: result.fileCount,
                                          directories: result.directoryCount)
+                    if !result.skippedJunk.isEmpty {
+                        summary += "\n" + L("Excluded macOS metadata files:")
+                            + " \(result.skippedJunk.count)"
+                    }
                     let done: @MainActor () -> Void = {
                         if Preferences.load().revealCreatedArchive {
                             NSWorkspace.shared.activateFileViewerSelecting([result.outputURL])
