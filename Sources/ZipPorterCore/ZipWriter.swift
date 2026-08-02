@@ -68,11 +68,16 @@ public final class ZipWriter {
     private var finalized = false
     private static let chunkSize = 256 << 10
 
+    /// `url` must not exist: the archive is created exclusively, so a file
+    /// that appears between the caller's name choice and this call fails the
+    /// write instead of being truncated. `Packer` always writes to a fresh
+    /// `.part` path and renames afterwards.
     public init(url: URL, options: Options = Options()) throws {
-        guard FileManager.default.createFile(atPath: url.path, contents: nil) else {
-            throw ZipWriterError.ioError("cannot create \(url.path)")
+        do {
+            file = try PathUtil.createExclusively(at: url)
+        } catch {
+            throw ZipWriterError.ioError("cannot create \(url.lastPathComponent): \(error.localizedDescription)")
         }
-        file = try FileHandle(forWritingTo: url)
         self.options = options
     }
 

@@ -285,8 +285,7 @@ public enum Unpacker {
                     try FileManager.default.createDirectory(
                         at: target.deletingLastPathComponent(), withIntermediateDirectories: true)
                     recordDirectories(components.dropLast())
-                    FileManager.default.createFile(atPath: target.path, contents: nil)
-                    let out = try FileHandle(forWritingTo: target)
+                    let out = try PathUtil.createExclusively(at: target)
                     do {
                         try reader.extract(entry, password: options.password) { chunk in
                             try out.write(contentsOf: chunk)

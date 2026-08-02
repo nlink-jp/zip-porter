@@ -250,6 +250,41 @@ final class HardeningTests: XCTestCase {
         XCTAssertEqual(Set(contents).count, 5, "each entry's data must survive: \(contents)")
     }
 
+    // MARK: - Never overwrite
+
+    func testExclusiveCreationRefusesAnExistingFile() throws {
+        // The "never overwrite" rule rests on this: FileManager.createFile
+        // truncates whatever it finds, so the guarantee would only be as
+        // good as the gap between the existence check and the write.
+        let url = workDir.appendingPathComponent("taken.bin")
+        try Data("original".utf8).write(to: url)
+        XCTAssertThrowsError(try PathUtil.createExclusively(at: url))
+        XCTAssertEqual(try Data(contentsOf: url), Data("original".utf8),
+                       "the existing file must be left exactly as it was")
+
+        let fresh = workDir.appendingPathComponent("free.bin")
+        let handle = try PathUtil.createExclusively(at: fresh)
+        try handle.write(contentsOf: Data("new".utf8))
+        try handle.close()
+        XCTAssertEqual(try Data(contentsOf: fresh), Data("new".utf8))
+    }
+
+    func testEntriesWithoutAUnixModeGetTheUsualDefault() throws {
+        // A DOS-host archive declares no mode; extraction must still land on
+        // the ordinary umask default rather than the mode the file happened
+        // to be created with.
+        let result = try Unpacker.unpack(zipURL: try fixture("cp932"), options: unpackOptions())
+        let first = try XCTUnwrap(
+            FileManager.default.enumerator(at: result.root, includingPropertiesForKeys: nil)?
+                .compactMap { $0 as? URL }
+                .first { (try? $0.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile) == true })
+        let mode = try XCTUnwrap(
+            (FileManager.default.attributesOfItem(atPath: first.path)[.posixPermissions] as? NSNumber)?
+                .uint16Value)
+        XCTAssertEqual(mode, UInt16(0o666) & ~PosixPermissions.umask,
+                       "got \(String(mode, radix: 8)) for \(first.lastPathComponent)")
+    }
+
     // MARK: - Permission bits
 
     func testArchiveModesAreMaskedByTheUmask() throws {

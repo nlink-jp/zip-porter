@@ -1,3 +1,4 @@
+import Darwin
 import Foundation
 
 /// Byte-based progress for pack/unpack, so a UI can draw a real bar
@@ -27,6 +28,35 @@ public enum PathUtil {
         var n = 2
         while isTaken(numberedVariant(name, n)) { n += 1 }
         return numberedVariant(name, n)
+    }
+
+    /// Create a file and hand back a write handle, refusing to touch
+    /// anything already at that path.
+    ///
+    /// `FileManager.createFile` truncates whatever it finds, which would
+    /// leave the "never overwrite" rule resting on the gap between
+    /// `uniqueName`'s existence check and the write. `O_EXCL` closes that
+    /// gap: a racing creation now fails the extraction instead of eating
+    /// the file. `permissions` goes through the umask like any other
+    /// `open(2)`; the archive's own mode, when it has one, is applied
+    /// afterwards by `PosixPermissions`.
+    public static func createExclusively(at url: URL,
+                                         permissions: mode_t = 0o666) throws -> FileHandle {
+        var descriptor: Int32 = -1
+        var failure: Int32 = EINVAL
+        url.withUnsafeFileSystemRepresentation { path in
+            guard let path else { return }
+            descriptor = open(path, O_WRONLY | O_CREAT | O_EXCL, permissions)
+            if descriptor < 0 { failure = errno }
+        }
+        guard descriptor >= 0 else {
+            throw NSError(domain: NSPOSIXErrorDomain, code: Int(failure), userInfo: [
+                NSFilePathErrorKey: url.path,
+                NSLocalizedDescriptionKey:
+                    "\(url.lastPathComponent): \(String(cString: strerror(failure)))",
+            ])
+        }
+        return FileHandle(fileDescriptor: descriptor, closeOnDealloc: true)
     }
 
     /// Return `url` if nothing exists there, else the numbered variant.
