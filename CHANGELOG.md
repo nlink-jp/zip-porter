@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [v0.10.1] - 2026-08-03
+
 ### Fixed
 
 - The app no longer crashes at launch on any machine other than the one
