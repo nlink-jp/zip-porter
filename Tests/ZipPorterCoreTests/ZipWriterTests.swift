@@ -82,6 +82,20 @@ final class ZipWriterTests: XCTestCase {
         }
     }
 
+    func testOverlongNameThrowsInsteadOfTrapping() throws {
+        // The name length is a 16-bit header field: converting a longer one
+        // traps. No filesystem hands us such a path today — this guards the
+        // conversion, not the filesystem.
+        let writer = try ZipWriter(url: tempURL)
+        let name = String(repeating: "a", count: 70_000)
+        XCTAssertThrowsError(try writer.addFile(name, data: Data("x".utf8))) { error in
+            XCTAssertEqual(error as? ZipWriterError, .nameTooLong(name))
+        }
+        // A name that exactly fills the field is still accepted.
+        XCTAssertNoThrow(try writer.addFile(String(repeating: "b", count: 0xFFFF),
+                                            data: Data("x".utf8)))
+    }
+
     func testStoreExtensionSkipsDeflate() throws {
         let payload = Data((0..<1000).map { UInt8($0 % 251) })
         let url = try makeArchive { w in

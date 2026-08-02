@@ -3,6 +3,8 @@ import Security
 
 public enum ZipWriterError: Error, Equatable {
     case nameNotEncodable(String)
+    /// The encoded name does not fit the format's 16-bit length field.
+    case nameTooLong(String)
     case duplicateName(String)
     case randomFailure
     case ioError(String)
@@ -276,6 +278,11 @@ public final class ZipWriter {
                           open: () throws -> (() throws -> Data?)) throws {
         precondition(!finalized, "addEntry after finalize()")
         let (nameBytes, nameFlags) = try encodeName(name)
+        // The name length is a 16-bit field in both headers; converting an
+        // over-long name would trap rather than write a broken archive.
+        guard nameBytes.count <= 0xFFFF else {
+            throw ZipWriterError.nameTooLong(name)
+        }
         guard seenNames.insert(nameBytes).inserted else {
             throw ZipWriterError.duplicateName(name)
         }
@@ -419,6 +426,13 @@ public final class ZipWriter {
         var patch = Data()
         patch.appendU32(crcValue)
         if !zip64 {
+            // The ZIP64 decision was made from the size the file reported
+            // before we read it. A source that grew past 4 GiB in between
+            // has no reserved extra field to patch, so say so instead of
+            // trapping on the conversion or writing a truncated size.
+            guard written <= 0xFFFF_FFFF, uncompressed <= 0xFFFF_FFFF else {
+                throw ZipWriterError.ioError("'\(name)' grew past 4 GiB while it was being packed")
+            }
             patch.appendU32(UInt32(written))
             patch.appendU32(UInt32(uncompressed))
             try file.write(contentsOf: patch)

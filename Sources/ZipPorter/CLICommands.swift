@@ -169,6 +169,8 @@ enum CLIRun {
             switch error {
             case .nameNotEncodable(let name):
                 fail("'\(name)' cannot be encoded as CP932; rename it or drop --cp932")
+            case .nameTooLong(let name):
+                fail("'\(name)' is too long to store in a ZIP entry header (64 KiB limit)")
             case .duplicateName(let name):
                 fail("duplicate entry name: \(name)")
             case .randomFailure, .ioError:
