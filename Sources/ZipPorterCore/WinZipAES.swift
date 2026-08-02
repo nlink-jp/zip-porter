@@ -12,7 +12,10 @@ public struct WinZipAES {
     public enum Mode { case encrypt, decrypt }
 
     private let mode: Mode
-    private let encKey: [UInt8]
+    /// Held in a wiping buffer rather than an array: the key outlives every
+    /// chunk of the entry, and this is the copy that would otherwise be
+    /// left behind in freed memory when the operation ends.
+    private let encKey: ZeroingBytes
     private var hmac = CCHmacContext()
     /// The 2-byte password verifier derived alongside the keys; the writer
     /// stores it after the salt.
@@ -29,20 +32,25 @@ public struct WinZipAES {
         self.mode = mode
         let keyLen = strength.keyBytes
         var derived = [UInt8](repeating: 0, count: keyLen * 2 + 2)
-        let passwordBytes = Array(password.utf8)
+        var passwordBytes = password.utf8.map { CChar(bitPattern: $0) }
         salt.withUnsafeBytes { (saltRaw: UnsafeRawBufferPointer) in
             _ = CCKeyDerivationPBKDF(
                 CCPBKDFAlgorithm(kCCPBKDF2),
-                passwordBytes.map { CChar(bitPattern: $0) }, passwordBytes.count,
+                passwordBytes, passwordBytes.count,
                 saltRaw.bindMemory(to: UInt8.self).baseAddress, salt.count,
                 CCPseudoRandomAlgorithm(kCCPRFHmacAlgSHA1),
                 Self.pbkdf2Iterations,
                 &derived, derived.count)
         }
-        encKey = Array(derived[0..<keyLen])
-        let authKey = Array(derived[keyLen..<(keyLen * 2)])
+        encKey = ZeroingBytes(Array(derived[0..<keyLen]))
+        var authKey = Array(derived[keyLen..<(keyLen * 2)])
         derivedVerifier = Data(derived[(keyLen * 2)...])
         CCHmacInit(&hmac, CCHmacAlgorithm(kCCHmacAlgSHA1), authKey, authKey.count)
+        // Everything derived from the password stops being needed here; the
+        // HMAC context has its own copy of the auth key.
+        authKey.wipeContents()
+        derived.wipeContents()
+        passwordBytes.withUnsafeMutableBytes { wipe($0.baseAddress, $0.count) }
     }
 
     /// Decrypting init: verifies the stored 2-byte password verifier.
@@ -129,7 +137,7 @@ public struct WinZipAES {
             CCOperation(kCCEncrypt),
             CCAlgorithm(kCCAlgorithmAES),
             CCOptions(kCCOptionECBMode),
-            encKey, encKey.count,
+            encKey.pointer, encKey.count,
             nil,
             counters, counters.count,
             &keystream, keystream.count,
