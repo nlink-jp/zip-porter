@@ -466,7 +466,10 @@ final class MainViewController: NSViewController, DropViewDelegate {
         }
     }
 
-    private static func isPasswordProblem(_ error: ZipReaderError) -> Bool {
+    /// Evaluated in the `catch` clause on the worker queue, before anything
+    /// hops back to the main actor — it is a plain switch over an enum, so
+    /// it has no business being actor-isolated.
+    private nonisolated static func isPasswordProblem(_ error: ZipReaderError) -> Bool {
         switch error {
         case .passwordRequired, .wrongPassword, .authenticationFailed:
             return true
