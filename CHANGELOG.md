@@ -2,6 +2,17 @@
 
 ## [Unreleased]
 
+### Changed
+
+- **Hardening pass over the unchecked arithmetic and boundaries the two
+  crashes came from** (#6): the little-endian readers are bounds-checked
+  and throwing, so a read added to the parser later cannot forget the
+  guard; entry ranges, the writer's 16/32-bit header conversions and the
+  extraction budget all reject values that would trap; archives and
+  extracted files are created with `O_EXCL`, so "never overwrite" no
+  longer rests on the gap between the check and the write; AES key
+  material is wiped once it stops being needed
+
 ### Fixed
 
 - **A failure to mark an extracted item as quarantined was silent** (#5),

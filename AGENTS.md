@@ -48,7 +48,7 @@ Sources/ZipPorterCore/      UI-independent engine (no AppKit): CRC32, DOSDateTim
                             ZipStructures, DeflateStream, ZipReader, ZipWriter,
                             ZipCryptoCipher, WinZipAES, EncodingDetector,
                             JunkFilter, FileNameTransform, Packer, Unpacker, PathUtil,
-                            PosixPermissions, XattrUtil
+                            PosixPermissions, XattrUtil, ZeroingBytes
 Sources/ZipPorter/          AppKit app + CLI: App (entry/routing/delegate), CLI (usage),
                             CLICommands (parse + run), PasswordPrompt, MainMenu,
                             MainViewController (flows), DropView, Sheets (options/
@@ -127,6 +127,14 @@ docs/{en,ja}/               RFP (design of record)
 - **Extracted names become NFD on disk** (Foundation's fileSystemRepresentation
   decomposes). Byte-level name comparisons in tests must normalize; APFS
   resolves both forms to the same file, so users are unaffected.
+- **`Data.readU16/32/64` are throwing and bounds-checked** — every offset
+  they take comes from a header field, and an out-of-range `Data`
+  subscript is a trap. Keep new reads on these accessors; do not add an
+  unchecked one back for convenience.
+- **Files are created with `O_EXCL`** (`PathUtil.createExclusively`), for
+  the archive and for every extracted file. `FileManager.createFile`
+  truncates what it finds, which would make "never overwrite" only as
+  strong as the gap after the existence check.
 - **Never do arithmetic on header values inside a bounds check.** Offsets
   and sizes out of a ZIP64 record are attacker-chosen 64-bit values, so
   `offset + size <= fileSize` overflows while evaluating itself and
