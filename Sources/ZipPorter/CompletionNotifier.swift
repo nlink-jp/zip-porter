@@ -60,7 +60,11 @@ final class CompletionNotifier: NSObject, UNUserNotificationCenterDelegate {
             content.body = body
             let request = UNNotificationRequest(
                 identifier: UUID().uuidString, content: content, trigger: nil)
-            center.add(request) { _ in
+            // Ask for the centre again rather than capturing the one from
+            // the main actor: `current()` is a singleton, so this is the
+            // same object, but nothing non-Sendable crosses into this
+            // background callback to be taken on trust.
+            UNUserNotificationCenter.current().add(request) { _ in
                 DispatchQueue.main.async {
                     MainActor.assumeIsolated {
                         guard let self else {
