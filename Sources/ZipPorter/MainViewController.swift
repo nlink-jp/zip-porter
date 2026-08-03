@@ -44,11 +44,20 @@ final class MainViewController: NSViewController, DropViewDelegate {
     var userDidInteract: (() -> Void)?
 
     private let dropView = DropView()
+    /// Whole requests that arrived while another was running — a second
+    /// Finder double-click, typically. They run in turn; `workDidFinish`
+    /// waits until the last of them is done.
+    private var pendingRequests: [[URL]] = []
     private var busy = false {
         didSet {
-            if !busy { workDidFinish?() }
+            if !busy { startNextRequestOrFinish() }
         }
     }
+
+    /// True from the moment a request starts until its result is dismissed —
+    /// including while a password prompt or options sheet is waiting on the
+    /// user. The delegate must not quit the process in that state.
+    var isBusy: Bool { busy || !pendingRequests.isEmpty }
 
     override func loadView() {
         let root = NSView(frame: NSRect(x: 0, y: 0, width: 460, height: 320))
@@ -132,16 +141,40 @@ final class MainViewController: NSViewController, DropViewDelegate {
     /// anything else packs (a mixed drop stores the ZIPs as plain files).
     func handle(_ urls: [URL]) {
         guard !urls.isEmpty else { return }
+        // Dropping or double-clicking a second archive while the first is
+        // still running used to be answered with a beep and nothing else —
+        // from a Finder launch, with no window on screen, that is silent
+        // data loss. Queue it instead.
         guard !busy else {
-            NSSound.beep()
+            pendingRequests.append(urls)
             return
         }
+        start(urls)
+    }
+
+    /// All-ZIP requests extract; anything else packs (a mixed drop stores
+    /// the ZIPs as plain files).
+    private func start(_ urls: [URL]) {
         let zips = urls.filter { $0.pathExtension.lowercased() == "zip" }
         if zips.count == urls.count {
             startUnpackQueue(zips)
         } else {
             startPack(urls)
         }
+    }
+
+    /// Runs on every transition out of `busy`. `workDidFinish` — which the
+    /// delegate uses to quit a Finder launch — fires only once nothing is
+    /// left to do.
+    private func startNextRequestOrFinish() {
+        guard !pendingRequests.isEmpty else {
+            workDidFinish?()
+            return
+        }
+        let next = pendingRequests.removeFirst()
+        // Hop off this `didSet`: `start` sets `busy` again, and re-entering
+        // the observer from inside itself is how ordering bugs get in.
+        DispatchQueue.main.async { [weak self] in self?.start(next) }
     }
 
     private func showError(_ headline: String, _ detail: String) {

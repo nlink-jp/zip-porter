@@ -49,7 +49,10 @@ Launch ZipPorter and drop things on the window:
   exists as `name.zip.part` until it is complete. An
   archive opened by double-click shows only that dialog — no droplet
   window — and quits the app once you dismiss it; dropping onto the window
-  leaves it open for the next file
+  leaves it open for the next file. Archives opened while one is still
+  running are queued and handled in turn, and opening one during the few
+  seconds the app lingers to finish showing a notification cancels that
+  exit rather than interrupting the new job
 - **Settings** (the gear in the window, or ⌘,) — The Unarchiver-style
   extraction preferences:
   destination (same folder / ask every time / a fixed folder), when to

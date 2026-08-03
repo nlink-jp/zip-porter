@@ -2,6 +2,25 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- **Opening a second archive right after the first no longer kills the work
+  in progress.** After a Finder-launched run finishes, the app leaves the
+  Dock but stays alive for a few seconds so its completion banner is not cut
+  short. The quit scheduled for the end of that wait was unconditional, so
+  anything that arrived during it was destroyed on a timer belonging to the
+  previous job: an extraction in progress was terminated mid-write, leaving a
+  **truncated file and no error** (a 700 MB archive reproducibly left 543 MB
+  on disk); an encrypted archive's password prompt vanished about three
+  seconds into typing; and clicking the Dock icon to keep the app open got
+  the window taken away again. The quit is now cancelled by anything that
+  gives the process new purpose, and re-evaluated when it fires rather than
+  acting on a decision made seconds earlier.
+- **A second archive opened while one is still running is now queued instead
+  of dropped.** It answered with a beep and did nothing — inaudible from a
+  Finder launch, where there is no window on screen, so the second archive
+  simply never extracted.
+
 ## [v0.10.2] - 2026-08-03
 
 ### Fixed

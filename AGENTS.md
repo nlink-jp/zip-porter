@@ -51,7 +51,8 @@ Sources/ZipPorterCore/      UI-independent engine (no AppKit): CRC32, DOSDateTim
                             PosixPermissions, XattrUtil, ZeroingBytes
 Sources/ZipPorter/          AppKit app + CLI: App (entry/routing/delegate), CLI (usage),
                             CLICommands (parse + run), PasswordPrompt, MainMenu,
-                            MainViewController (flows), DropView, Sheets (options/
+                            MainViewController (flows), OneShotQuit (lifetime
+                            rule), DropView, Sheets (options/
                             password/progress), SettingsWindow, Preferences, L10n,
                             Resources/{en,ja}.lproj
 Tests/ZipPorterCoreTests/   engine tests + testdata/ cross-verification fixtures
@@ -185,6 +186,17 @@ docs/{en,ja}/               RFP (design of record)
   sheet silently goes nowhere. AppDelegate queues those URLs in
   `pendingURLs` and handles them once the window is up — keep that queue if
   you touch the launch path.
+- **A process that keeps running while looking closed must be reclaimable.**
+  After a one-shot run the app drops to `.accessory` and lingers so its
+  banner survives — it looks gone but still receives open events. The quit
+  scheduled for the end of that wait was a bare `asyncAfter`, so it fired
+  into whatever was happening by then: a live extraction (truncated file, no
+  error), an open password prompt, or a window the user had just reclaimed
+  from the Dock. Any deferred `NSApp.terminate` needs (a) a cancellable
+  handle, cancelled by every path that hands the process new work
+  (`cancelPendingQuit`), and (b) a **re-decision at fire time** —
+  `OneShotQuit.decide` is a pure function precisely so both evaluations use
+  the same rules and can be tested. Never let it quit while `isBusy`.
 - The one-shot launch rule lives in AppDelegate: `isOneShotLaunch` is set
   only for open events that predate launch completion, and cleared by any
   drop, a Dock-icon reopen, or opening Settings, so an app the user opened
