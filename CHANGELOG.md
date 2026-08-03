@@ -2,11 +2,21 @@
 
 ## [Unreleased]
 
+### Documentation
+
+- The four design records for this app moved out of the organization ADR
+  log into `docs/{en,ja}/adr/` (0001 extraction hardening, 0002 parallel
+  compression, 0003 zlib parallel deflate, 0004 batch completion), now
+  mirrored in Japanese as well as English. The organization log is for
+  decisions that bind the whole organization; these bind one app. The old
+  numbers (012/013/014/016) remain in `nlink-jp/.github` as redirects, so
+  links in earlier release notes still resolve.
+
 ## [v0.11.0] - 2026-08-03
 
 ### Changed
 
-- **Several archives opened together are now one job, not N** (ADR-016).
+- **Several archives opened together are now one job, not N** (ADR-0004).
   Selecting three ZIPs in Finder and opening them produced three
   completion banners about a second apart — and macOS replaces one banner
   with the next from the same app, so only the last was readable while the
@@ -126,7 +136,7 @@ archive decide the permissions of the files it dropped on you.
   them that way routinely — produced a `.app` whose files each carried
   `com.apple.quarantine` but whose bundle root, the thing Gatekeeper
   actually evaluates, did not. `ditto` marks the bundle root; now so do we.
-  This was the ADR-012 §4 gap re-opening through a different door
+  This was the ADR-0001 §4 gap re-opening through a different door
 
 - **Extraction applied the archive's permission bits verbatim** (#4), so an
   archive asking for `0777` produced world-writable — and executable —
@@ -184,7 +194,7 @@ archive decide the permissions of the files it dropped on you.
   **dialog** to dismiss, or **nothing** at all. Runs that have something to
   report — skipped unsafe paths, renamed duplicates, excluded metadata —
   still use the dialog whatever this is set to, and errors still alert
-  (ADR-012: those must not be silent)
+  (ADR-0001: those must not be silent)
 
 ## [v0.8.3] - 2026-08-01
 
@@ -228,7 +238,7 @@ archive decide the permissions of the files it dropped on you.
   so reveal-in-Finder happens immediately instead of after a click, and a
   Finder-launched run quits on its own. The result dialog still appears
   when there is something to read: skipped unsafe paths, skipped symlinks,
-  renamed duplicates, or excluded metadata (per ADR-012 those must not be
+  renamed duplicates, or excluded metadata (per ADR-0001 those must not be
   silent), and errors keep their alerts
 - The first run asks for notification permission; if declined, clean
   completions rely on the revealed Finder window as the signal
@@ -251,7 +261,7 @@ archive decide the permissions of the files it dropped on you.
 
 ## [v0.6.0] - 2026-08-01
 
-Single-file parallel deflate on zlib ([ADR-014](https://github.com/nlink-jp/.github/blob/main/adr/014-zip-porter-zlib-parallel-deflate.md)).
+Single-file parallel deflate on zlib ([ADR-0003](docs/en/adr/0003-zlib-parallel-deflate.md)).
 
 ### Changed
 
@@ -271,7 +281,7 @@ Single-file parallel deflate on zlib ([ADR-014](https://github.com/nlink-jp/.git
 
 ## [v0.5.0] - 2026-08-01
 
-Compression throughput ([ADR-013](https://github.com/nlink-jp/.github/blob/main/adr/013-zip-porter-parallel-compression.md)).
+Compression throughput ([ADR-0002](docs/en/adr/0002-parallel-compression.md)).
 
 ### Changed
 
@@ -370,7 +380,7 @@ user-facing compression level. Both need libz and are under investigation.
 
 ## [v0.2.0] - 2026-08-01
 
-Extraction hardening ([ADR-012](https://github.com/nlink-jp/.github/blob/main/adr/012-zip-porter-hardening.md)).
+Extraction hardening ([ADR-0001](docs/en/adr/0001-extraction-hardening.md)).
 An unarchiver executes attacker-chosen structure against the user's
 filesystem; these checks make malformed archives fail early and loudly
 instead of consuming resources or silently losing data.

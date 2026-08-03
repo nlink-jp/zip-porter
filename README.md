@@ -128,7 +128,7 @@ Run with no command to launch the GUI.
 
 An unarchiver runs attacker-chosen structure against your filesystem, so
 extraction refuses malformed archives rather than trying to salvage them
-(see [ADR-012](https://github.com/nlink-jp/.github/blob/main/adr/012-zip-porter-hardening.md)):
+(see [ADR-0001](docs/en/adr/0001-extraction-hardening.md)):
 
 - **zip-slip protection** — absolute paths, `..`, drive letters, and NTFS
   alternate-data-stream names are skipped and reported; symlink entries
@@ -160,8 +160,8 @@ compress as independent blocks in parallel (zlib, the pigz join), so a
 single 180 MB file packs in under a second on a 12-core machine; a
 310 MB / 150-file mixed corpus takes 1.8 s where Apple `ditto` needs 6.9 s
 — at the same output size. Design notes:
-[ADR-013](https://github.com/nlink-jp/.github/blob/main/adr/013-zip-porter-parallel-compression.md),
-[ADR-014](https://github.com/nlink-jp/.github/blob/main/adr/014-zip-porter-zlib-parallel-deflate.md).
+[ADR-0002](docs/en/adr/0002-parallel-compression.md),
+[ADR-0003](docs/en/adr/0003-zlib-parallel-deflate.md).
 
 ### inspect
 

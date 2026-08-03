@@ -106,7 +106,7 @@ public final class ZipWriter {
 
     /// Add a file from disk (streamed; the source may be read twice for
     /// ZipCrypto's CRC pre-pass). `forceStore` skips deflate for data a
-    /// probe already found incompressible (ADR-013).
+    /// probe already found incompressible (ADR-0002).
     public func addFile(_ name: String, fileURL: URL,
                         modificationDate: Date? = nil,
                         forceStore: Bool = false,
@@ -261,7 +261,7 @@ public final class ZipWriter {
     }
 
     /// An entry whose bytes were already compressed elsewhere — by the
-    /// parallel compressor (ADR-013). The writer then only has to encrypt
+    /// parallel compressor (ADR-0002). The writer then only has to encrypt
     /// and frame them.
     struct Precompressed {
         var method: Zip.Method

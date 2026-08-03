@@ -45,7 +45,7 @@ struct Preferences {
 
     /// How a clean finish is announced. Anything worth reading — skipped
     /// unsafe paths, renamed duplicates, errors — always uses a dialog
-    /// regardless of this setting (ADR-012: those must not be silent).
+    /// regardless of this setting (ADR-0001: those must not be silent).
     enum CompletionStyle: String {
         case notification
         case dialog

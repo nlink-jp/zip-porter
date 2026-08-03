@@ -6,7 +6,7 @@ let package = Package(
     defaultLocalization: "en",
     platforms: [.macOS(.v14)],
     targets: [
-        // System zlib for deflate (ADR-014); inflate stays on the
+        // System zlib for deflate (ADR-0003); inflate stays on the
         // Compression framework.
         .systemLibrary(
             name: "CZlib",

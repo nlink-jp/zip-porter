@@ -142,7 +142,7 @@ public enum Packer {
         var writerOptions = ZipWriter.Options()
         writerOptions.nameEncoding = options.nameEncoding
         writerOptions.encryption = options.encryption
-        // Compress up front, in parallel, then write in order (ADR-013).
+        // Compress up front, in parallel, then write in order (ADR-0002).
         // Entries that don't benefit from deflate are left to the writer's
         // streaming path, which stores them at I/O speed.
         let fileItems = items.enumerated().filter { !$0.element.isDirectory }

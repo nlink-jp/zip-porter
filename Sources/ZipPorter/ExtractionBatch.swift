@@ -38,7 +38,7 @@ struct ArchiveOutcome: Equatable {
 
 /// What one request produced, accumulated across every archive in it.
 ///
-/// A Finder multi-selection arrives as a single open event, and ADR-016
+/// A Finder multi-selection arrives as a single open event, and ADR-0004
 /// makes it a single result: one summary, one set of notes, one Finder
 /// reveal. Reporting each archive separately meant the user could only read
 /// the last banner — macOS replaces one banner with the next from the same
@@ -98,7 +98,7 @@ struct ExtractionBatch {
 
     /// Everything the user must be told about rather than left to discover.
     /// Non-empty forces the dialog regardless of the completion-style
-    /// setting (ADR-012).
+    /// setting (ADR-0001).
     var notes: [String] {
         var lines: [String] = []
         if !failures.isEmpty {

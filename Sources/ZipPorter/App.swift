@@ -132,7 +132,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     /// A Finder-launched run is over, so the process leaves — immediately,
     /// with no wind-down. The completion banner is scheduled rather than
-    /// presented by this app (ADR-016), so it outlives the process and there
+    /// presented by this app (ADR-0004), so it outlives the process and there
     /// is nothing left here to wait for.
     private func quitIfOneShotIsFinished() {
         guard OneShotQuit.decide(isOneShot: isOneShotLaunch,

@@ -17,7 +17,9 @@ changing scope.
   all engine logic is unit-tested pure code.
 - **Scope is closed.** ZIP only — no 7z/RAR/tar, no Windows/Linux builds,
   no cloud integration, no file-name encryption. Explicitly rejected in the
-  RFP; propose an ADR before revisiting.
+  RFP; propose an ADR before revisiting. Project ADRs live in
+  `docs/{en,ja}/adr/` (four-digit, en/ja mirrored), not in the
+  organization ADR log.
 - **Crypto changes require cross-verification fixtures** (7-Zip / Info-ZIP /
   Windows built-in ZIPs), not just unit tests.
 - **Security invariants**: zip-slip guard in the extractor, symlinks skipped

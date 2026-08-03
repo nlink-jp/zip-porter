@@ -240,7 +240,7 @@ final class PackerTests: XCTestCase {
         XCTAssertEqual(try Data(contentsOf: out), Data("existing".utf8))
     }
 
-    // MARK: - Parallel compression (ADR-013)
+    // MARK: - Parallel compression (ADR-0002)
 
     /// Text that deflates well, so the probe keeps these on the deflate path.
     private func compressibleData(_ seed: Int, count: Int) -> Data {
@@ -338,7 +338,7 @@ final class PackerTests: XCTestCase {
     }
 
     func testBlockParallelSingleLargeFileRoundTrips() throws {
-        // Force the ADR-014 path with test-sized data: 5 MB across several
+        // Force the ADR-0003 path with test-sized data: 5 MB across several
         // sub-blockSize... actually sub-threshold blocks. The joined stream
         // (sync-flushed blocks + empty final block) must inflate to the
         // exact original everywhere.

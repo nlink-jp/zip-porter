@@ -2,7 +2,7 @@ import Darwin
 import Foundation
 
 /// Extended-attribute access, used to propagate `com.apple.quarantine` from
-/// a downloaded archive onto everything extracted from it (ADR-012 §4).
+/// a downloaded archive onto everything extracted from it (ADR-0001 §4).
 /// Without this, Gatekeeper never evaluates executables that arrive inside
 /// a ZIP — the behavior Archive Utility and The Unarchiver both provide.
 public enum XattrUtil {

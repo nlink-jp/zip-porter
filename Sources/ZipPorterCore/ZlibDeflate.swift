@@ -1,7 +1,7 @@
 import CZlib
 import Foundation
 
-/// Raw-deflate encoding on the system zlib (ADR-014). Level 6 output is
+/// Raw-deflate encoding on the system zlib (ADR-0003). Level 6 output is
 /// both smaller and — with the parallel paths — faster than the Compression
 /// framework encoder this replaces. Inflate stays on the Compression
 /// framework; the streams produced here are standard deflate.

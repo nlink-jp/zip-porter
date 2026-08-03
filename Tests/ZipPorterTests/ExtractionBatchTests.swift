@@ -1,7 +1,7 @@
 import XCTest
 @testable import ZipPorter
 
-/// How a whole request reports itself (ADR-016). The bug this replaces:
+/// How a whole request reports itself (ADR-0004). The bug this replaces:
 /// three archives opened from one Finder selection produced three banners,
 /// each replacing the last, so the user could read about exactly one of
 /// them.
@@ -63,7 +63,7 @@ final class ExtractionBatchTests: XCTestCase {
 
     // MARK: - Notes
 
-    /// ADR-012: security-relevant outcomes are never announced by a banner.
+    /// ADR-0001: security-relevant outcomes are never announced by a banner.
     /// Merged across the batch so one dialog covers the whole request.
     func testSecurityNotesMergeAcrossArchives() {
         var batch = ExtractionBatch(requested: 2)

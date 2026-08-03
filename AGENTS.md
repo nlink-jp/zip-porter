@@ -35,7 +35,7 @@ make brew       # generate the Homebrew cask into ../homebrew-tap
 - `scripts/gen-fixtures.sh` regenerates the benign `Tests/.../testdata`
   fixtures with external tools (zip, ditto, python3, 7zz —
   `brew install 7zip`); `scripts/gen-hostile-fixtures.py <dir>` regenerates
-  the ADR-012 attack fixtures. Both sets are committed; rerun only to
+  the ADR-0001 attack fixtures. Both sets are committed; rerun only to
   change what the fixtures contain.
 
 ## Layout
@@ -61,7 +61,9 @@ Tests/ZipPorterCoreTests/   engine tests + testdata/ cross-verification fixtures
 Tests/ZipPorterTests/       CLI routing/parsing, localization, main-menu, quit rule,
                             batch reporting tests
 scripts/                    vendored org templates + gen-fixtures.sh
-docs/{en,ja}/               RFP (design of record)
+docs/{en,ja}/               RFP (design of record) + adr/ (0001 hardening,
+                            0002 parallel compression, 0003 zlib parallel deflate,
+                            0004 batch completion) — mirrored en/ja
 ```
 
 ## Project rules
@@ -69,10 +71,14 @@ docs/{en,ja}/               RFP (design of record)
 - **ZipPorterCore never imports AppKit.** All engine logic is pure,
   unit-tested code; the GUI (Phase 2) and CLI both consume Packer/Unpacker.
 - **Scope is the RFP.** ZIP only — no 7z/RAR/tar, no Windows/Linux builds,
-  no cloud. Propose an ADR before revisiting.
+  no cloud. Propose an ADR before revisiting — in `docs/{en,ja}/adr/`,
+  four-digit numbered and mirrored in both languages. This app's decisions
+  live here, not in the organization ADR log (`nlink-jp/.github` keeps
+  only decisions that bind the whole organization; 012/013/014/016 there
+  are redirects left behind by the 2026-08-03 move).
 - **Crypto changes require cross-verification fixtures**, not just unit
   tests (7-Zip / Info-ZIP / Windows-made ZIPs; see gen-fixtures.sh).
-- **Security invariants** (ADR-012 — do not relax any of these without a
+- **Security invariants** (ADR-0001 — do not relax any of these without a
   superseding ADR): zip-slip guard in `Unpacker.sanitize`; symlinks skipped
   both directions; passwords via prompt only (never argv); passwordRequired
   and the space-budget check fire before any disk write; failed extractions
@@ -86,14 +92,14 @@ docs/{en,ja}/               RFP (design of record)
   overlap, duplicates, truncation, malformed ZIP64 headers. Our own writer
   cannot produce these structures, which is the point: they are built from
   the format spec.
-- **Packing compresses in parallel and writes sequentially** (ADR-013).
+- **Packing compresses in parallel and writes sequentially** (ADR-0002).
   Entry order comes from `Packer`'s sort, so output stays byte-for-byte
   deterministic — there is a test for that; keep it. Encryption stays in
   the sequential write phase (per-entry salts), and `ParallelCompressor`
   spills compressed output above 16 MB to scratch files that the writer
   drains and `cleanUp` deletes on every exit path.
 - **Deflate is zlib (CZlib system library), inflate is the Compression
-  framework** (ADR-014). Files ≥ 32 MB compress as ~16 MB blocks in
+  framework** (ADR-0003). Files ≥ 32 MB compress as ~16 MB blocks in
   bounded waves: every data block ends with Z_SYNC_FLUSH (no BFINAL), and
   a trailing empty Z_FINISH block closes the stream — so no EOF lookahead
   is needed and an exact-multiple-of-blockSize file still ends properly
@@ -189,7 +195,7 @@ docs/{en,ja}/               RFP (design of record)
   sheet silently goes nowhere. AppDelegate queues those URLs in
   `pendingURLs` and handles them once the window is up — keep that queue if
   you touch the launch path.
-- **Do not re-introduce a deferred quit.** Until ADR-016 a finished
+- **Do not re-introduce a deferred quit.** Until ADR-0004 a finished
   one-shot run dropped to `.accessory` and lingered ~4.5 s so its banner
   survived — visibly gone, still receiving open events — and the timer that
   ended that wait fired into whatever was happening by then: a live
@@ -234,7 +240,7 @@ docs/{en,ja}/               RFP (design of record)
   arrives as one `application(_:open:)`, and `ExtractionBatch` turns it into
   one result — one progress bar (`BatchProgress`, weighted by archive size),
   one destination question, one password carried forward, one summary, one
-  Finder reveal (ADR-016). Announcing per archive meant only the last banner
+  Finder reveal (ADR-0004). Announcing per archive meant only the last banner
   was readable, since macOS replaces one banner with the next from the same
   app. Per-archive housekeeping (folder date, trashing the archive) stays in
   `finishUnpack`; anything the *user* sees belongs to the batch. A password

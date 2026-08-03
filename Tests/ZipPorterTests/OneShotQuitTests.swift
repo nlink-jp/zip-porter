@@ -27,7 +27,7 @@ final class OneShotQuitTests: XCTestCase {
 
     /// Nothing about the answer may depend on when it is asked — there is no
     /// clock in the rule, which is what removed the wind-down window
-    /// entirely (ADR-016).
+    /// entirely (ADR-0004).
     func testDecisionIsAFunctionOfItsInputsOnly() {
         XCTAssertEqual(OneShotQuit.decide(isOneShot: true, isBusy: false),
                        OneShotQuit.decide(isOneShot: true, isBusy: false))

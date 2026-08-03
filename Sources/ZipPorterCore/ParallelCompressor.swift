@@ -1,7 +1,7 @@
 import Foundation
 
 /// Compresses entries concurrently so packing uses every core, while the
-/// writer still emits them in order (ADR-013). Also decides, by measuring
+/// writer still emits them in order (ADR-0002). Also decides, by measuring
 /// rather than by file extension, which entries are not worth deflating.
 enum ParallelCompressor {
     /// Compressed bytes for one entry, held in memory when small and
@@ -42,7 +42,7 @@ enum ParallelCompressor {
 
     static let chunkSize = 256 << 10
     /// Files at least this large compress as independent blocks in bounded
-    /// waves (ADR-014). Internal so tests can force the path with small data.
+    /// waves (ADR-0003). Internal so tests can force the path with small data.
     static var blockParallelThreshold: UInt64 = 32 << 20
     /// Block granularity of the pigz-style join; ~16 MB costs no measurable
     /// ratio versus one stream.
@@ -85,7 +85,7 @@ enum ParallelCompressor {
         guard !urls.isEmpty else { return results }
 
         // Large files get the block-parallel path one at a time; the rest
-        // run whole-file, one per core (ADR-013/014).
+        // run whole-file, one per core (ADR-0002/014).
         var smallIndexes: [Int] = []
         var largeIndexes: [Int] = []
         for (index, url) in urls.enumerated() where deflate[index] {
@@ -156,7 +156,7 @@ enum ParallelCompressor {
         }
     }
 
-    /// Block-parallel compression of one large file (ADR-014): read up to
+    /// Block-parallel compression of one large file (ADR-0003): read up to
     /// `cores` blocks, compress them concurrently, append in order, repeat.
     /// Every data block ends with a sync flush; a trailing empty Z_FINISH
     /// block closes the stream, so no EOF lookahead is needed. Peak memory

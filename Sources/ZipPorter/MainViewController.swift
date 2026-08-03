@@ -348,7 +348,7 @@ final class MainViewController: NSViewController, DropViewDelegate {
     /// Announce a clean finish the way the user asked for: a banner, the
     /// result dialog, or nothing at all. Runs `done` when the user is
     /// through with it. Anything with notes never reaches here — those
-    /// always get the dialog (ADR-012).
+    /// always get the dialog (ADR-0001).
     private func announceCompletion(sheet: OperationSheet,
                                     title: String,
                                     summary: String,
@@ -378,7 +378,7 @@ final class MainViewController: NSViewController, DropViewDelegate {
 
     /// A request — one Finder multi-selection, one drop — is extracted as a
     /// single batch: one progress sheet, one destination question, one
-    /// result, one Finder reveal (ADR-016).
+    /// result, one Finder reveal (ADR-0004).
     private func startUnpackBatch(_ zips: [URL]) {
         busy = true
         CompletionNotifier.shared.prepare()

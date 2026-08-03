@@ -47,7 +47,7 @@ public enum Unpacker {
         /// Items the quarantine attribute could not be set on. Non-empty
         /// means part of what was extracted is invisible to Gatekeeper —
         /// a security-relevant outcome, so it is reported rather than
-        /// swallowed (ADR-012).
+        /// swallowed (ADR-0001).
         public var quarantineFailures: [String]
         public var detectedEncoding: NameEncoding
     }
@@ -56,7 +56,7 @@ public enum Unpacker {
         case emptyArchive
         case destinationNotADirectory(String)
         /// The archive declares more content than the destination volume
-        /// can hold — checked before writing anything (ADR-012 §2).
+        /// can hold — checked before writing anything (ADR-0001 §2).
         case insufficientSpace(required: UInt64, available: UInt64)
     }
 
@@ -125,7 +125,7 @@ public enum Unpacker {
         // Collision keys are NFC + case-folded because APFS is
         // case-insensitive by default and stores either normalization —
         // "Report.txt", "report.txt" and an NFD "データ.txt" all land on
-        // one file if we don't uniquify (ADR-012 §5).
+        // one file if we don't uniquify (ADR-0001 §5).
         var claimedPaths = Set<String>()
         func collisionKey(_ components: [String]) -> String {
             components.joined(separator: "/")
@@ -173,7 +173,7 @@ public enum Unpacker {
         // Pre-flight budget: refuse before writing when the declared
         // content cannot fit on the destination volume. This is what stops
         // overlap bombs from filling a disk even when every individual
-        // entry is honest about its own size (ADR-012 §2).
+        // entry is honest about its own size (ADR-0001 §2).
         let required = reader.declaredTotalSize
         if let available = freeSpace(at: destBase) {
             // Phrased as a subtraction from the free space: `required +
@@ -233,7 +233,7 @@ public enum Unpacker {
         var processedBytes: UInt64 = 0
         // Downloaded archives carry com.apple.quarantine; everything we
         // write from them must carry it too, or Gatekeeper never sees the
-        // contents (ADR-012 §4).
+        // contents (ADR-0001 §4).
         let quarantine = XattrUtil.quarantine(of: zipURL)
         var quarantineFailures: [String] = []
         /// Apply the attribute and remember the item if it would not take —
@@ -254,7 +254,7 @@ public enum Unpacker {
         // an archive with no directory entries (7-Zip writes them that way
         // routinely, and an attacker would deliberately) otherwise yields a
         // `.app` whose files are each quarantined but whose bundle root —
-        // the thing Gatekeeper evaluates — is not (ADR-012 §4).
+        // the thing Gatekeeper evaluates — is not (ADR-0001 §4).
         var createdDirectories: Set<String> = []
         func recordDirectories(_ components: some Collection<String>) {
             var prefix: [String] = []

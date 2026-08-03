@@ -11,11 +11,11 @@ public enum ZipReaderError: Error, Equatable {
     case authenticationFailed(entryName: String)
     /// An entry produced more output than its header declared — a
     /// decompression bomb, caught mid-stream before the write completes
-    /// (ADR-012 §1).
+    /// (ADR-0001 §1).
     case sizeExceedsDeclared(entryName: String)
     /// Entry data ranges overlap: the `42.zip` construction, where many
     /// central-directory entries point at one compressed payload
-    /// (ADR-012 §3). Legitimate writers never produce this.
+    /// (ADR-0001 §3). Legitimate writers never produce this.
     case overlappingEntries
 }
 
@@ -46,7 +46,7 @@ public final class ZipReader {
     }
 
     /// Total uncompressed size the archive declares — the extraction
-    /// budget checked against free space before writing (ADR-012 §2).
+    /// budget checked against free space before writing (ADR-0001 §2).
     ///
     /// The sum saturates rather than wraps. Two ZIP64 entries declaring
     /// 2^63 each sum to exactly zero in wrapping arithmetic, which would
@@ -154,7 +154,7 @@ public final class ZipReader {
 
         // 256 MiB ceiling: a million entries occupy roughly 100 MB of
         // central directory, so this stays far above real archives while
-        // bounding the pre-extraction allocation (ADR-012). The bounds are
+        // bounding the pre-extraction allocation (ADR-0001). The bounds are
         // phrased as subtractions from fileSize because a ZIP64 record can
         // declare values whose *sum* overflows UInt64 — computing
         // `cdOffset + cdSize` to check them would trap before the check runs.
@@ -336,7 +336,7 @@ public final class ZipReader {
         func out(_ d: Data) throws {
             // Fail-fast: stop the moment output exceeds what the header
             // declared, instead of writing an unbounded amount and only
-            // then failing the size check (ADR-012 §1).
+            // then failing the size check (ADR-0001 §1).
             guard outCount &+ UInt64(d.count) <= declaredSize else {
                 throw ZipReaderError.sizeExceedsDeclared(entryName: name(of: entry))
             }

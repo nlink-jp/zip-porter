@@ -1,7 +1,7 @@
 import XCTest
 @testable import ZipPorterCore
 
-/// ADR-012 hardening, exercised against hostile archives built straight
+/// ADR-0001 hardening, exercised against hostile archives built straight
 /// from the format spec (scripts/gen-hostile-fixtures.py) — our own writer
 /// cannot produce these structures.
 final class HardeningTests: XCTestCase {
@@ -30,7 +30,7 @@ final class HardeningTests: XCTestCase {
         return options
     }
 
-    // MARK: - Decompression bombs (ADR-012 §1)
+    // MARK: - Decompression bombs (ADR-0001 §1)
 
     func testSizeLyingBombStopsAtDeclaredSize() throws {
         // Declares 1 KiB, actually inflates to 64 MiB.
@@ -56,7 +56,7 @@ final class HardeningTests: XCTestCase {
         XCTAssertEqual(leftovers, [], "a rejected bomb must leave nothing on disk")
     }
 
-    // MARK: - Overlapping entries (ADR-012 §3)
+    // MARK: - Overlapping entries (ADR-0001 §3)
 
     func testOverlapBombIsRejectedAtOpen() throws {
         // 200 central-directory entries pointing at one 8 MiB payload:
@@ -120,7 +120,7 @@ final class HardeningTests: XCTestCase {
         }
     }
 
-    // MARK: - Space budget (ADR-012 §2)
+    // MARK: - Space budget (ADR-0001 §2)
 
     func testInsufficientSpaceIsRefusedBeforeWriting() throws {
         // A declared total far beyond any real volume must be refused, and
@@ -224,7 +224,7 @@ final class HardeningTests: XCTestCase {
         try (local + central + eocd).write(to: url)
     }
 
-    // MARK: - Duplicate names (ADR-012 §5)
+    // MARK: - Duplicate names (ADR-0001 §5)
 
     func testDuplicateNamesAreUniquifiedNotOverwritten() throws {
         // Fixture: report.txt twice, REPORT.TXT (case-only), and an
@@ -304,7 +304,7 @@ final class HardeningTests: XCTestCase {
         }
     }
 
-    // MARK: - Quarantine propagation (ADR-012 §4)
+    // MARK: - Quarantine propagation (ADR-0001 §4)
 
     func testQuarantineIsPropagatedToExtractedFiles() throws {
         let source = workDir.appendingPathComponent("downloaded.zip")
@@ -331,7 +331,7 @@ final class HardeningTests: XCTestCase {
         // the top is created implicitly on the way to the file. Gatekeeper
         // evaluates the bundle, not the executable inside it, so a `.app`
         // whose root misses the attribute is a Gatekeeper bypass — which is
-        // what ADR-012 §4 exists to prevent.
+        // what ADR-0001 §4 exists to prevent.
         let source = workDir.appendingPathComponent("bundle.zip")
         let writer = try ZipWriter(url: source)
         try writer.addFile("Demo.app/Contents/Info.plist", data: Data("<plist/>".utf8))

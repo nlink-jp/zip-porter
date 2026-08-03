@@ -9,7 +9,7 @@ import Foundation
 /// user had just reclaimed from the Dock.
 ///
 /// There is deliberately no "wait a moment first" answer any more. Until
-/// ADR-016 the app stayed alive after posting its completion banner, because
+/// ADR-0004 the app stayed alive after posting its completion banner, because
 /// an immediately-presented notification is withdrawn when its app exits —
 /// and that gap, visibly gone but still accepting open events, is what those
 /// bugs lived in. Notifications are now scheduled rather than presented by

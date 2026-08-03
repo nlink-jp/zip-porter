@@ -123,7 +123,7 @@ zip-porter --version
 
 アーカイバは攻撃者が決めた構造をファイルシステムに対して実行するプログラム
 なので、不正なアーカイブは救済せず拒否します
-（[ADR-012](https://github.com/nlink-jp/.github/blob/main/adr/012-zip-porter-hardening.md)）:
+（[ADR-0001](docs/ja/adr/0001-extraction-hardening.ja.md)）:
 
 - **zip-slip 対策** — 絶対パス・`..`・ドライブレター・NTFS ADS 名は
   スキップして報告。シンボリックリンクは作成・展開とも常にスキップ
@@ -150,8 +150,8 @@ zip-porter --version
 （zlib、pigz 方式の連結）するため、単一 180MB のファイルも 12 コア機で
 1 秒未満で圧縮できます。310MB / 150 ファイルの混合コーパスは 1.8 秒
 （Apple `ditto` は 6.9 秒）で、出力サイズは同等です。設計の詳細:
-[ADR-013](https://github.com/nlink-jp/.github/blob/main/adr/013-zip-porter-parallel-compression.md)、
-[ADR-014](https://github.com/nlink-jp/.github/blob/main/adr/014-zip-porter-zlib-parallel-deflate.md)。
+[ADR-0002](docs/ja/adr/0002-parallel-compression.ja.md)、
+[ADR-0003](docs/ja/adr/0003-zlib-parallel-deflate.ja.md)。
 
 ### inspect（診断）
 

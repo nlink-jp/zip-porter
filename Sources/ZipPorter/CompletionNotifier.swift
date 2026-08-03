@@ -15,7 +15,7 @@ final class CompletionNotifier: NSObject, UNUserNotificationCenterDelegate {
     var didOpenNotification: (() -> Void)?
 
     /// The notification is *scheduled* a hair in the future rather than
-    /// delivered immediately (ADR-016). A notification presented through
+    /// delivered immediately (ADR-0004). A notification presented through
     /// `willPresent` belongs to the app that posted it and is withdrawn when
     /// that app exits — measured: a one-shot run that quit at presentation
     /// left no banner on screen at all, which is why the app used to demote
