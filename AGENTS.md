@@ -55,7 +55,7 @@ Sources/ZipPorter/          AppKit app + CLI: App (entry/routing/delegate), CLI 
                             password/progress), SettingsWindow, Preferences, L10n,
                             Resources/{en,ja}.lproj
 Tests/ZipPorterCoreTests/   engine tests + testdata/ cross-verification fixtures
-Tests/ZipPorterTests/       CLI routing/parsing tests
+Tests/ZipPorterTests/       CLI routing/parsing, localization, main-menu tests
 scripts/                    vendored org templates + gen-fixtures.sh
 docs/{en,ja}/               RFP (design of record)
 ```
@@ -163,6 +163,20 @@ docs/{en,ja}/               RFP (design of record)
   popup vanished off the right edge); `setContentSize` does not override
   that. Pin the stack inside a plain container with an explicit width
   constraint instead — see `SettingsWindowController.buildUI`.
+- **Standard editing shortcuts only exist if the main menu carries them.**
+  ⌘X/⌘C/⌘V/⌘A/⌘Z and ⌘W are delivered to the first responder as main-menu
+  key equivalents, not by the text field itself — with no Edit menu, ⌘V in
+  a password field does nothing, and there is no code anywhere to breakpoint
+  (shipped that way through v0.10.1). `MainMenu` builds File/Edit/Window;
+  `MainMenuTests` pins the bindings.
+- **The menu bar draws the top-level `NSMenuItem`'s title, not its
+  submenu's.** An `NSMenuItem()` with a fully populated submenu is an
+  *invisible* menu. The app and Window menus mislead here — AppKit
+  special-cases both (process name; `NSApp.windowsMenu`), so they appear
+  untitled and everything else does not.
+- `MainMenu.build()` is deliberately free of `NSApp` access so tests can
+  inspect the menu; `MainMenu.install(into:)` does the wiring. `NSApp` is
+  nil in the test process — touching it there is a trap.
 - Borderless buttons in a window with no other focusable view come up
   wearing a focus ring: set `focusRingType = .none` and
   `refusesFirstResponder = true` (the drop window's gear button).

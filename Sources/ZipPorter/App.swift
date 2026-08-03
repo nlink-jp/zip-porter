@@ -96,7 +96,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationWillFinishLaunching(_ notification: Notification) {
         // The menu must exist before launch finishes so Finder-open events
         // land in a fully wired app.
-        NSApp.mainMenu = MainMenu.build()
+        MainMenu.install(into: NSApp)
         CompletionNotifier.shared.prepare()
         mainViewController.workDidFinish = { [weak self] in
             guard let self, self.isOneShotLaunch else { return }

@@ -27,6 +27,16 @@
 "Quit ZipPorter" = "ZipPorter を終了";
 "Minimize" = "しまう";
 "Window" = "ウインドウ";
+"File" = "ファイル";
+"Close" = "閉じる";
+"Edit" = "編集";
+"Undo" = "取り消す";
+"Redo" = "やり直す";
+"Cut" = "カット";
+"Copy" = "コピー";
+"Paste" = "ペースト";
+"Delete" = "削除";
+"Select All" = "すべてを選択";
 "Archive" = "アーカイブ";
 "OK" = "OK";
 "Settings" = "設定";

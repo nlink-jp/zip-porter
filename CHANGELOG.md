@@ -2,6 +2,17 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- ⌘V (and ⌘X / ⌘C / ⌘A / ⌘Z) now work in the password fields, and ⌘W
+  closes the droplet window. Both were missing for the same reason: the
+  app had no Edit menu and no Close item, and macOS routes those
+  shortcuts to the focused control *through* main-menu key equivalents —
+  with no matching item, the keystroke never reaches the text field.
+  The menu bar also draws the top-level menu item's own title, so the
+  new File and Edit menus carry titles rather than relying on their
+  submenu's (an untitled item is an invisible menu).
+
 ## [v0.10.1] - 2026-08-03
 
 ### Fixed

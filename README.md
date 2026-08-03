@@ -58,6 +58,9 @@ Launch ZipPorter and drop things on the window:
   move-archive-to-Trash. Creating has the same destination choice (next to
   the originals / a fixed folder / ask every time), plus whether to show
   the options sheet and whether to reveal the new archive in Finder
+- **Keyboard** — the usual editing shortcuts work in the password fields
+  (⌘X / ⌘C / ⌘V / ⌘A / ⌘Z), and ⌘W closes the droplet window, which ends
+  the session just like clicking its red button
 
 ## CLI
 
