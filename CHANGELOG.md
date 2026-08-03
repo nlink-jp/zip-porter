@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [v0.10.2] - 2026-08-03
+
 ### Fixed
 
 - ⌘V (and ⌘X / ⌘C / ⌘A / ⌘Z) now work in the password fields, and ⌘W
@@ -377,7 +379,9 @@ instead of consuming resources or silently losing data.
   reveal in Finder, move archive to Trash
 - en/ja localization; app icon
 
-[Unreleased]: https://github.com/nlink-jp/zip-porter/compare/v0.10.0...HEAD
+[Unreleased]: https://github.com/nlink-jp/zip-porter/compare/v0.10.2...HEAD
+[v0.10.2]: https://github.com/nlink-jp/zip-porter/compare/v0.10.1...v0.10.2
+[v0.10.1]: https://github.com/nlink-jp/zip-porter/compare/v0.10.0...v0.10.1
 [v0.10.0]: https://github.com/nlink-jp/zip-porter/compare/v0.9.3...v0.10.0
 [v0.9.3]: https://github.com/nlink-jp/zip-porter/compare/v0.9.2...v0.9.3
 [v0.9.2]: https://github.com/nlink-jp/zip-porter/compare/v0.9.1...v0.9.2
