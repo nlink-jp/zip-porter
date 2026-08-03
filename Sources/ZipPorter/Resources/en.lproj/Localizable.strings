@@ -84,3 +84,9 @@
 "Notification" = "Notification";
 "Dialog" = "Dialog";
 "Nothing" = "Nothing";
+"Extracted %d archives" = "Extracted %d archives";
+"%1$d of %2$d archives extracted" = "%1$d of %2$d archives extracted";
+"%1$d of %2$d — %3$@" = "%1$d of %2$d — %3$@";
+"Could not extract these archives:" = "Could not extract these archives:";
+"Cancelled — the remaining archives were not extracted." = "Cancelled — the remaining archives were not extracted.";
+"…and %d more" = "…and %d more";

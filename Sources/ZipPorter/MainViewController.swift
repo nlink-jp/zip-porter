@@ -157,7 +157,7 @@ final class MainViewController: NSViewController, DropViewDelegate {
     private func start(_ urls: [URL]) {
         let zips = urls.filter { $0.pathExtension.lowercased() == "zip" }
         if zips.count == urls.count {
-            startUnpackQueue(zips)
+            startUnpackBatch(zips)
         } else {
             startPack(urls)
         }
@@ -322,7 +322,8 @@ final class MainViewController: NSViewController, DropViewDelegate {
                     if notes.isEmpty {
                         self.announceCompletion(sheet: sheet,
                                                 title: L("Archive created"),
-                                                summary: summary, done: done)
+                                                summary: summary,
+                                                reveal: [result.outputURL], done: done)
                     } else {
                         sheet.finish(title: L("Archive created"),
                                      summary: summary, notes: notes, completion: done)
@@ -351,6 +352,7 @@ final class MainViewController: NSViewController, DropViewDelegate {
     private func announceCompletion(sheet: OperationSheet,
                                     title: String,
                                     summary: String,
+                                    reveal: [URL],
                                     done: @escaping @MainActor () -> Void) {
         switch Preferences.load().completionStyle {
         case .notification:
@@ -358,6 +360,7 @@ final class MainViewController: NSViewController, DropViewDelegate {
             CompletionNotifier.shared.notify(
                 title: title,
                 body: summary.replacingOccurrences(of: "\n", with: " — "),
+                reveal: reveal,
                 completion: done)
         case .dialog:
             sheet.finish(title: title, summary: summary, notes: [], completion: done)
@@ -373,19 +376,119 @@ final class MainViewController: NSViewController, DropViewDelegate {
 
     // MARK: - Unpack flow
 
-    private func startUnpackQueue(_ zips: [URL]) {
+    /// A request — one Finder multi-selection, one drop — is extracted as a
+    /// single batch: one progress sheet, one destination question, one
+    /// result, one Finder reveal (ADR-016).
+    private func startUnpackBatch(_ zips: [URL]) {
         busy = true
         CompletionNotifier.shared.prepare()
-        var queue = zips
-        func next() {
-            guard let zip = queue.first else {
-                busy = false
+        let prefs = Preferences.load()
+        // Asked once for the whole request. Per archive it was one panel per
+        // double-clicked file, which is not a decision anyone wants to make
+        // three times.
+        resolveDestination(prefs) { [weak self] destination, cancelled in
+            guard let self else { return }
+            guard !cancelled else {
+                self.busy = false
                 return
             }
-            queue.removeFirst()
-            unpackOne(zip) { next() }
+            self.runUnpackBatch(zips, destination: destination, prefs: prefs)
         }
-        next()
+    }
+
+    private func runUnpackBatch(_ zips: [URL], destination: URL?, prefs: Preferences) {
+        let sheet = OperationSheet(title: L("Extracting…"))
+        sheet.begin(on: hostWindow)
+        let progress = BatchProgress(sizes: zips.map(Self.fileSize))
+        var batch = ExtractionBatch(requested: zips.count)
+        // Archives handed out together almost always share one password;
+        // carrying it forward turns N prompts into one.
+        var password: String?
+        var index = 0
+
+        func step() {
+            guard index < zips.count, !sheet.flag.isCancelled else {
+                batch.cancelled = sheet.flag.isCancelled && index < zips.count
+                self.finishBatch(sheet: sheet, batch: batch, prefs: prefs)
+                return
+            }
+            let zip = zips[index]
+            let position = index
+            if zips.count > 1 {
+                sheet.setScope(String(format: L("%1$d of %2$d — %3$@"),
+                                      position + 1, zips.count, zip.lastPathComponent))
+            }
+            self.unpackOne(
+                zip, password: password, destination: destination, prefs: prefs, sheet: sheet,
+                progress: { fraction in
+                    sheet.setFraction(progress.overall(index: position, fraction: fraction))
+                },
+                completion: { outcome in
+                    switch outcome {
+                    case .done(let archiveOutcome, let accepted):
+                        password = accepted ?? password
+                        batch.record(archiveOutcome)
+                    case .failed(let reason):
+                        batch.record(ExtractionBatch.Failure(
+                            archive: zip.lastPathComponent, reason: reason))
+                    case .cancelled:
+                        batch.cancelled = true
+                        self.finishBatch(sheet: sheet, batch: batch, prefs: prefs)
+                        return
+                    }
+                    index += 1
+                    step()
+                })
+        }
+        step()
+    }
+
+    /// One archive's contribution to the batch. A failure never aborts the
+    /// rest of the request — it is reported at the end alongside what did
+    /// come out.
+    private enum ArchiveResult {
+        case done(ArchiveOutcome, acceptedPassword: String?)
+        case failed(reason: String)
+        case cancelled
+    }
+
+    /// Weight for the batch progress bar. Zero for anything unreadable —
+    /// the bar just gives that archive no share of the total.
+    private static func fileSize(_ url: URL) -> UInt64 {
+        let attributes = try? FileManager.default.attributesOfItem(atPath: url.path)
+        return (attributes?[.size] as? NSNumber)?.uint64Value ?? 0
+    }
+
+    private func finishBatch(sheet: OperationSheet, batch: ExtractionBatch, prefs: Preferences) {
+        // Nothing came out: an error, not a result with zeroes in it.
+        if batch.isTotalFailure {
+            sheet.dismiss()
+            showError(batch.failureHeadline, batch.failureDetail)
+            busy = false
+            return
+        }
+        // Cancelled before the first archive finished — there is nothing to
+        // report and the user already knows why.
+        guard !batch.outcomes.isEmpty else {
+            sheet.dismiss()
+            busy = false
+            return
+        }
+        let reveal = batch.topItems
+        let done: @MainActor () -> Void = { [weak self] in
+            if prefs.revealInFinder, !reveal.isEmpty {
+                NSWorkspace.shared.activateFileViewerSelecting(reveal)
+            }
+            self?.busy = false
+        }
+        let notes = batch.notes
+        if notes.isEmpty {
+            announceCompletion(sheet: sheet, title: batch.title,
+                               summary: batch.summary, reveal: reveal, done: done)
+        } else {
+            sheet.finish(title: batch.title, summary: batch.summary,
+                         notes: notes, completion: done)
+        }
     }
 
     private func resolveDestination(_ prefs: Preferences,
@@ -416,32 +519,27 @@ final class MainViewController: NSViewController, DropViewDelegate {
         }
     }
 
-    private func unpackOne(_ zip: URL, password: String? = nil,
-                           destination: URL? = nil, destinationResolved: Bool = false,
-                           completion: @escaping () -> Void) {
-        let prefs = Preferences.load()
-        if !destinationResolved {
-            resolveDestination(prefs) { [weak self] dest, cancelled in
-                guard let self else { return }
-                if cancelled {
-                    completion()
-                    return
-                }
-                self.unpackOne(zip, password: password, destination: dest,
-                               destinationResolved: true, completion: completion)
-            }
-            return
-        }
-
+    /// Extracts one archive into the batch's shared sheet. Reports through
+    /// `completion` instead of announcing anything itself — the batch owns
+    /// the result the user sees.
+    ///
+    /// `password` is what the batch has already learned; `acceptedPassword`
+    /// in the result hands back whatever actually worked so the next archive
+    /// can try it first.
+    private func unpackOne(_ zip: URL,
+                           password: String?,
+                           destination: URL?,
+                           prefs: Preferences,
+                           sheet: OperationSheet,
+                           progress: @escaping @MainActor (Double) -> Void,
+                           completion: @escaping (ArchiveResult) -> Void) {
         var options = Unpacker.Options()
         options.destination = destination
         options.password = password
         options.folderPolicy = prefs.wrapMode.folderPolicy
-        let sheet = OperationSheet(title: L("Extracting…"))
-        sheet.begin(on: hostWindow)
         let flag = sheet.flag
         let forwarder = ProgressForwarder { fraction, path in
-            sheet.setFraction(fraction)
+            progress(fraction)
             if let path { sheet.update(path) }
         }
         DispatchQueue.global(qos: .userInitiated).async {
@@ -451,49 +549,41 @@ final class MainViewController: NSViewController, DropViewDelegate {
                     progress: { forwarder.forward($0) },
                     shouldCancel: { flag.isCancelled })
                 DispatchQueue.main.async {
-                    let summary = result.root.lastPathComponent + "\n"
-                        + Self.itemCount(files: result.extractedFiles,
-                                         directories: result.extractedDirectories)
-                    let notes = Self.extractionNotes(result)
-                    let done: @MainActor () -> Void = {
-                        self.finishUnpack(zip: zip, result: result, prefs: prefs)
-                        completion()
-                    }
-                    if notes.isEmpty {
-                        self.announceCompletion(sheet: sheet,
-                                                title: L("Archive extracted"),
-                                                summary: summary, done: done)
-                    } else {
-                        sheet.finish(title: L("Archive extracted"),
-                                     summary: summary, notes: notes, completion: done)
-                    }
+                    // Per-archive housekeeping (folder date, trashing the
+                    // archive) happens here; the Finder reveal does not —
+                    // that is one action for the whole batch.
+                    self.finishUnpack(zip: zip, result: result, prefs: prefs)
+                    completion(.done(ArchiveOutcome(archive: zip.lastPathComponent,
+                                                    result: result),
+                                     acceptedPassword: password))
                 }
             } catch let error as ZipReaderError where Self.isPasswordProblem(error) {
                 DispatchQueue.main.async {
-                    sheet.dismiss()
                     let hint = error == .passwordRequired
                         ? L("This archive is encrypted.")
                         : L("Wrong password. Try again.")
+                    // Hung from the operation sheet, not the droplet window:
+                    // the batch sheet stays up for the whole request, and a
+                    // second sheet on the same parent would queue behind it.
                     PasswordSheet(message: "\(zip.lastPathComponent) — \(hint)")
-                        .present(on: self.hostWindow) { entered in
+                        .present(on: sheet.nestedDialogHost) { entered in
                             guard let entered, !entered.isEmpty else {
-                                completion()
+                                // Declining the prompt is a decision about
+                                // this archive, not about the batch: say so
+                                // in the result and carry on.
+                                completion(.failed(reason: L("Password required")))
                                 return
                             }
                             self.unpackOne(zip, password: entered, destination: destination,
-                                           destinationResolved: true, completion: completion)
+                                           prefs: prefs, sheet: sheet,
+                                           progress: progress, completion: completion)
                         }
                 }
             } catch is CancellationError {
-                DispatchQueue.main.async {
-                    sheet.dismiss()
-                    completion()
-                }
+                DispatchQueue.main.async { completion(.cancelled) }
             } catch {
                 DispatchQueue.main.async {
-                    sheet.dismiss()
-                    self.showError(L("Could not extract the archive."), Self.describe(error))
-                    completion()
+                    completion(.failed(reason: Self.describe(error)))
                 }
             }
         }
@@ -511,33 +601,6 @@ final class MainViewController: NSViewController, DropViewDelegate {
         }
     }
 
-    /// Security-relevant outcomes must not be silent in the GUI the way a
-    /// CLI warning line can be: unsafe paths were dropped, or entries were
-    /// renamed to avoid overwriting each other. These ride along in the
-    /// result sheet rather than in a second alert.
-    private static func extractionNotes(_ result: Unpacker.Result) -> [String] {
-        var lines: [String] = []
-        if !result.skippedUnsafe.isEmpty {
-            lines.append(L("Skipped entries with unsafe paths:") + "\n"
-                + result.skippedUnsafe.prefix(6).map { "  \($0)" }.joined(separator: "\n"))
-        }
-        if !result.skippedSymlinks.isEmpty {
-            lines.append(L("Skipped symbolic links:") + " \(result.skippedSymlinks.count)")
-        }
-        if !result.renamedDuplicates.isEmpty {
-            lines.append(L("Duplicate names were extracted under new names:") + "\n"
-                + result.renamedDuplicates.prefix(6)
-                    .map { "  \($0.original) → \($0.chosen)" }.joined(separator: "\n"))
-        }
-        if !result.quarantineFailures.isEmpty {
-            // Gatekeeper will not evaluate what we failed to mark — the one
-            // outcome the user cannot discover any other way.
-            lines.append(L("These items could not be marked as downloaded, so macOS will not check them:")
-                + "\n" + result.quarantineFailures.prefix(6).map { "  \($0)" }.joined(separator: "\n"))
-        }
-        return lines
-    }
-
     private func finishUnpack(zip: URL, result: Unpacker.Result, prefs: Preferences) {
         if prefs.folderDate == .archive, result.createdWrapper,
            let mtime = (try? FileManager.default.attributesOfItem(atPath: zip.path))?[.modificationDate] as? Date {
@@ -547,9 +610,8 @@ final class MainViewController: NSViewController, DropViewDelegate {
         if prefs.trashArchiveAfterExtract {
             try? FileManager.default.trashItem(at: zip, resultingItemURL: nil)
         }
-        if prefs.revealInFinder {
-            NSWorkspace.shared.activateFileViewerSelecting(result.extractedTopItems)
-        }
+        // The Finder reveal is deliberately not here: it happens once for
+        // the whole request, in `finishBatch`.
     }
 
     private static func describe(_ error: Error) -> String {

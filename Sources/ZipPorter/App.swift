@@ -92,21 +92,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// Open events that arrived before the window existed; the operation
     /// sheet needs a parent window, so they wait for it.
     private var pendingURLs: [URL] = []
-    /// The scheduled "quit once the banner has had its time". Held so it can
-    /// be cancelled: between scheduling and firing, the process is alive but
-    /// hidden from the Dock, and anything that arrives in that window —
-    /// another double-clicked archive, a Dock click — gives it new purpose.
-    /// An uncancellable timer here killed live extractions mid-write and
-    /// password prompts mid-keystroke.
-    private var pendingQuit: DispatchWorkItem?
 
     func applicationWillFinishLaunching(_ notification: Notification) {
         // The menu must exist before launch finishes so Finder-open events
         // land in a fully wired app.
         MainMenu.install(into: NSApp)
         CompletionNotifier.shared.prepare()
+        // Clicking a completion banner usually launches a fresh process just
+        // to serve the click; the notifier reveals the result in Finder, and
+        // the app then has whatever life the user gives it.
+        CompletionNotifier.shared.didOpenNotification = { [weak self] in
+            self?.reclaim()
+        }
         mainViewController.workDidFinish = { [weak self] in
-            self?.scheduleOneShotQuit()
+            self?.quitIfOneShotIsFinished()
         }
         mainViewController.userDidInteract = { [weak self] in
             self?.reclaim()
@@ -131,61 +130,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     // MARK: - One-shot lifetime
 
-    /// A Finder-launched run is over: wait out the banner it just posted,
-    /// then quit. A foreground notification lives only as long as its app,
-    /// so quitting straight away would cut the banner short; when no banner
-    /// was shown there is nothing to wait for and the app leaves at once.
-    private func scheduleOneShotQuit() {
-        switch currentQuitDecision() {
-        case .stay:
-            return
-        case .now:
-            NSApp.terminate(nil)
-        case .afterBanner(let wait):
-            // Leave the Dock so nothing lingers visually. This is the part
-            // that makes the process *look* finished while it is not, so
-            // every path that hands it new work has to undo it — see
-            // `cancelPendingQuit`.
-            NSApp.setActivationPolicy(.accessory)
-            let quit = DispatchWorkItem { [weak self] in
-                guard let self else { return }
-                // Decided again rather than trusted: cancellation and the
-                // arrival of new work race each other on the main queue, and
-                // acting on the stale answer is what truncated a file
-                // mid-write.
-                guard self.currentQuitDecision() == .now else {
-                    self.cancelPendingQuit()
-                    return
-                }
-                NSApp.terminate(nil)
-            }
-            pendingQuit = quit
-            DispatchQueue.main.asyncAfter(deadline: .now() + wait, execute: quit)
-        }
-    }
-
-    private func currentQuitDecision() -> OneShotQuit {
-        OneShotQuit.decide(
-            isOneShot: isOneShotLaunch,
-            isBusy: mainViewController.isBusy,
-            bannerTimeRemaining: CompletionNotifier.shared.remainingBannerTime())
-    }
-
-    /// Call before serving work that arrives during the wind-down: the
-    /// process is staying, so it must stop pretending it has gone.
-    private func cancelPendingQuit() {
-        pendingQuit?.cancel()
-        pendingQuit = nil
-        if NSApp.activationPolicy() != .regular {
-            NSApp.setActivationPolicy(.regular)
-        }
+    /// A Finder-launched run is over, so the process leaves — immediately,
+    /// with no wind-down. The completion banner is scheduled rather than
+    /// presented by this app (ADR-016), so it outlives the process and there
+    /// is nothing left here to wait for.
+    private func quitIfOneShotIsFinished() {
+        guard OneShotQuit.decide(isOneShot: isOneShotLaunch,
+                                 isBusy: mainViewController.isBusy) == .now else { return }
+        NSApp.terminate(nil)
     }
 
     /// The user has claimed the app for themselves (a drop, the Dock icon,
     /// Settings) — it is no longer a disposable one-shot session.
     private func reclaim() {
         isOneShotLaunch = false
-        cancelPendingQuit()
     }
 
     private func showDropWindow() {
@@ -216,11 +174,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             pendingURLs.append(contentsOf: urls)
             return
         }
-        // A second archive opened while the previous run was winding down.
-        // Still a one-shot session — it should quit when *this* job is done
-        // — but the scheduled quit belongs to the job before it and would
-        // land in the middle of this one.
-        cancelPendingQuit()
+        // A second archive opened after the first finished. Still a one-shot
+        // session — it quits when this job is done too.
         mainViewController.handle(urls)
     }
 
@@ -233,6 +188,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             showDropWindow()
         }
         return true
+    }
+
+    /// Last line of defence for the race a one-shot app cannot avoid: an
+    /// open event can be delivered between the decision to quit and the
+    /// process actually going. Work in flight outranks the decision that
+    /// preceded it — the same rule `OneShotQuit` states, applied at the exit.
+    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        mainViewController.isBusy ? .terminateCancel : .terminateNow
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {

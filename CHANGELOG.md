@@ -2,6 +2,40 @@
 
 ## [Unreleased]
 
+## [v0.11.0] - 2026-08-03
+
+### Changed
+
+- **Several archives opened together are now one job, not N** (ADR-016).
+  Selecting three ZIPs in Finder and opening them produced three
+  completion banners about a second apart — and macOS replaces one banner
+  with the next from the same app, so only the last was readable while the
+  rest piled up in Notification Center. It also meant three Finder reveals
+  jumping around, three OK clicks when the completion style is *dialog*,
+  three destination panels when the destination is *ask every time*, and a
+  separate password prompt for each archive of a set that shares one.
+  A request is now reported once: a single progress bar weighted across the
+  whole selection ("2 of 3 — foo.zip"), one destination question, a password
+  carried to the next archive, one summary, one Finder reveal.
+- **A failed archive no longer stops the rest.** The remaining archives are
+  extracted and the result reads "2 of 3 archives extracted" with the
+  failures named — previously an alert interrupted the run for each one.
+- **Clicking a completion notification reveals the result in Finder.**
+
+### Fixed
+
+- **The app no longer lingers after a Finder-launched run.** It used to
+  post its completion banner, drop out of the Dock (`.accessory`) and stay
+  alive ~4.5 s, because a notification presented by the app is withdrawn
+  when the app exits. That gap — invisible but still receiving open events
+  — is what truncated an extraction mid-write in v0.10.3. Notifications are
+  now *scheduled* with a trigger, so the system owns the presentation and
+  the banner outlives the process: measured 6.3 s of process lifetime down
+  to 0.35 s, with the banner appearing and lasting exactly as before. The
+  deferred quit, the Dock demotion and the "wait out the banner" state are
+  gone rather than guarded, and the ~1.2 s stall between archives in a
+  batch went with them.
+
 ## [v0.10.3] - 2026-08-03
 
 ### Fixed

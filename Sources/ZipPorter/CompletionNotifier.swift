@@ -1,3 +1,4 @@
+import AppKit
 import Foundation
 import UserNotifications
 
@@ -9,22 +10,23 @@ import UserNotifications
 final class CompletionNotifier: NSObject, UNUserNotificationCenterDelegate {
     static let shared = CompletionNotifier()
 
-    /// Runs once the banner is actually on screen (or the wait times out),
-    /// so a one-shot launch does not terminate mid-presentation.
-    private var pendingCompletion: (@MainActor () -> Void)?
-    /// When the current banner appeared. A one-shot launch waits out the
-    /// remainder of its display before quitting — and only then.
-    private var bannerPresentedAt: Date?
-    /// Roughly how long macOS leaves a banner up.
-    private static let bannerLifetime: TimeInterval = 4.5
+    /// Called when the user clicks a completion banner. The delegate uses it
+    /// to bring the app back into a sensible state.
+    var didOpenNotification: (() -> Void)?
 
-    /// Seconds a caller should stay alive so the banner it posted finishes
-    /// its time on screen; zero when no banner was shown (permission
-    /// declined, or the result went to a dialog instead).
-    func remainingBannerTime() -> TimeInterval {
-        guard let bannerPresentedAt else { return 0 }
-        return max(0, Self.bannerLifetime - Date().timeIntervalSince(bannerPresentedAt))
-    }
+    /// The notification is *scheduled* a hair in the future rather than
+    /// delivered immediately (ADR-016). A notification presented through
+    /// `willPresent` belongs to the app that posted it and is withdrawn when
+    /// that app exits — measured: a one-shot run that quit at presentation
+    /// left no banner on screen at all, which is why the app used to demote
+    /// itself to `.accessory` and linger for seconds. With a trigger,
+    /// presentation belongs to notificationd: the banner appears and lives
+    /// its full life with the process already gone, so nothing has to keep a
+    /// finished app alive to babysit it.
+    private nonisolated static let scheduleDelay: TimeInterval = 0.1
+
+    /// Paths to select in Finder if the user clicks the banner.
+    private nonisolated static let revealKey = "reveal"
 
     /// Wire the delegate early — foreground banners depend on it. Safe to
     /// call repeatedly.
@@ -38,17 +40,19 @@ final class CompletionNotifier: NSObject, UNUserNotificationCenterDelegate {
     ///
     /// Authorization is resolved HERE, inside the chain — not from a cached
     /// flag, which races short operations and silently skips their banner.
-    /// The completion is then deferred until the system actually presents
-    /// the notification: terminating the app before that point cancels the
-    /// banner the user was supposed to see.
-    func notify(title: String, body: String, completion: @escaping @MainActor () -> Void) {
+    /// `completion` runs once the notification has been accepted, which is
+    /// all the caller has to wait for: presentation is no longer its
+    /// business.
+    func notify(title: String, body: String, reveal: [URL],
+                completion: @escaping @MainActor () -> Void) {
         guard Bundle.main.bundleIdentifier != nil else {
             completion()
             return
         }
         let center = UNUserNotificationCenter.current()
         center.delegate = self
-        center.requestAuthorization(options: [.alert, .sound]) { [weak self] granted, _ in
+        let revealPaths = reveal.map(\.path)
+        center.requestAuthorization(options: [.alert, .sound]) { granted, _ in
             guard granted else {
                 DispatchQueue.main.async {
                     MainActor.assumeIsolated { completion() }
@@ -58,36 +62,22 @@ final class CompletionNotifier: NSObject, UNUserNotificationCenterDelegate {
             let content = UNMutableNotificationContent()
             content.title = title
             content.body = body
+            content.userInfo = [Self.revealKey: revealPaths]
             let request = UNNotificationRequest(
-                identifier: UUID().uuidString, content: content, trigger: nil)
+                identifier: UUID().uuidString,
+                content: content,
+                trigger: UNTimeIntervalNotificationTrigger(
+                    timeInterval: Self.scheduleDelay, repeats: false))
             // Ask for the centre again rather than capturing the one from
             // the main actor: `current()` is a singleton, so this is the
             // same object, but nothing non-Sendable crosses into this
             // background callback to be taken on trust.
             UNUserNotificationCenter.current().add(request) { _ in
                 DispatchQueue.main.async {
-                    MainActor.assumeIsolated {
-                        guard let self else {
-                            completion()
-                            return
-                        }
-                        self.pendingCompletion = completion
-                        // Presentation is asynchronous and not guaranteed
-                        // (Focus modes swallow banners), so never leave the
-                        // app waiting on it forever.
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
-                            self.runPendingCompletion()
-                        }
-                    }
+                    MainActor.assumeIsolated { completion() }
                 }
             }
         }
-    }
-
-    private func runPendingCompletion() {
-        guard let completion = pendingCompletion else { return }
-        pendingCompletion = nil
-        completion()
     }
 
     /// Banners must show even while the app is frontmost — the droplet
@@ -97,13 +87,27 @@ final class CompletionNotifier: NSObject, UNUserNotificationCenterDelegate {
         willPresent notification: UNNotification,
         withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void) {
         completionHandler([.banner, .list])
-        // The banner is on screen now; let it settle before the caller's
-        // completion (which may quit the app) runs.
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
+    }
+
+    /// Clicking the banner asks for the result, not for the app: show what
+    /// was produced in Finder. By now the run that posted it has usually
+    /// exited, so this often arrives in a process the click just launched.
+    nonisolated func userNotificationCenter(
+        _ center: UNUserNotificationCenter,
+        didReceive response: UNNotificationResponse,
+        withCompletionHandler completionHandler: @escaping () -> Void) {
+        let paths = response.notification.request.content
+            .userInfo[Self.revealKey] as? [String] ?? []
+        DispatchQueue.main.async {
             MainActor.assumeIsolated {
-                CompletionNotifier.shared.bannerPresentedAt = Date()
-                CompletionNotifier.shared.runPendingCompletion()
+                let urls = paths.map { URL(fileURLWithPath: $0) }
+                    .filter { FileManager.default.fileExists(atPath: $0.path) }
+                if !urls.isEmpty {
+                    NSWorkspace.shared.activateFileViewerSelecting(urls)
+                }
+                CompletionNotifier.shared.didOpenNotification?()
             }
+            completionHandler()
         }
     }
 }

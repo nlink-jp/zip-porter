@@ -52,11 +52,14 @@ Sources/ZipPorterCore/      UI-independent engine (no AppKit): CRC32, DOSDateTim
 Sources/ZipPorter/          AppKit app + CLI: App (entry/routing/delegate), CLI (usage),
                             CLICommands (parse + run), PasswordPrompt, MainMenu,
                             MainViewController (flows), OneShotQuit (lifetime
-                            rule), DropView, Sheets (options/
+                            rule), ExtractionBatch (per-request result +
+                            BatchProgress), CompletionNotifier, DropView,
+                            Sheets (options/
                             password/progress), SettingsWindow, Preferences, L10n,
                             Resources/{en,ja}.lproj
 Tests/ZipPorterCoreTests/   engine tests + testdata/ cross-verification fixtures
-Tests/ZipPorterTests/       CLI routing/parsing, localization, main-menu tests
+Tests/ZipPorterTests/       CLI routing/parsing, localization, main-menu, quit rule,
+                            batch reporting tests
 scripts/                    vendored org templates + gen-fixtures.sh
 docs/{en,ja}/               RFP (design of record)
 ```
@@ -186,17 +189,18 @@ docs/{en,ja}/               RFP (design of record)
   sheet silently goes nowhere. AppDelegate queues those URLs in
   `pendingURLs` and handles them once the window is up — keep that queue if
   you touch the launch path.
-- **A process that keeps running while looking closed must be reclaimable.**
-  After a one-shot run the app drops to `.accessory` and lingers so its
-  banner survives — it looks gone but still receives open events. The quit
-  scheduled for the end of that wait was a bare `asyncAfter`, so it fired
-  into whatever was happening by then: a live extraction (truncated file, no
-  error), an open password prompt, or a window the user had just reclaimed
-  from the Dock. Any deferred `NSApp.terminate` needs (a) a cancellable
-  handle, cancelled by every path that hands the process new work
-  (`cancelPendingQuit`), and (b) a **re-decision at fire time** —
-  `OneShotQuit.decide` is a pure function precisely so both evaluations use
-  the same rules and can be tested. Never let it quit while `isBusy`.
+- **Do not re-introduce a deferred quit.** Until ADR-016 a finished
+  one-shot run dropped to `.accessory` and lingered ~4.5 s so its banner
+  survived — visibly gone, still receiving open events — and the timer that
+  ended that wait fired into whatever was happening by then: a live
+  extraction (truncated file, no error), an open password prompt, a window
+  the user had just reclaimed from the Dock. The fix is not a better timer;
+  it is having nothing to wait for (see the notification note below).
+  `OneShotQuit.decide(isOneShot:isBusy:)` is a pure function with no clock
+  in it, and `applicationShouldTerminate` refuses while `isBusy` as a last
+  guard against an open event arriving mid-exit. If some future change needs
+  the process to outlive its work again, it needs a cancellable handle *and*
+  a re-decision at fire time — but prefer removing the need.
 - The one-shot launch rule lives in AppDelegate: `isOneShotLaunch` is set
   only for open events that predate launch completion, and cleared by any
   drop, a Dock-icon reopen, or opening Settings, so an app the user opened
@@ -205,12 +209,16 @@ docs/{en,ja}/               RFP (design of record)
   goes through `DialogPresenter`, which falls back to a standalone window.
   Keep `hostWindow` guarded by `isViewLoaded` — touching `view` would build
   the droplet UI the mode exists to avoid.
-- **A foreground notification dies with its app.** Terminating right after
-  posting cuts the banner short (v0.8.0/v0.8.1). The one-shot path drops to
-  `.accessory` so the Dock icon goes away at once, then terminates after
-  `CompletionNotifier.remainingBannerTime()` — which is zero when no banner
-  was shown, so the dialog path still quits at once. Keep that gating if
-  you touch the quit path.
+- **A notification the app presents dies with the app; one it schedules
+  does not.** With `trigger: nil` the banner goes up through `willPresent`
+  and belongs to this process — quit and it is withdrawn (measured: a
+  one-shot run that quit at presentation left no banner at all). With a
+  `UNTimeIntervalNotificationTrigger`, presentation belongs to
+  `notificationd`: measured, the banner appeared and was still on screen at
+  t=5 s with the process gone since t=0.57 s. That is why `notify` schedules
+  at +0.1 s and runs its completion as soon as `add` succeeds. Do not
+  "simplify" it back to an immediate post — that reinstates the lingering
+  process and everything above.
 - **The app claims only `public.zip-archive`**, so one-shot *packing* is
   effectively unreachable from Finder (folders never launch an app; the
   icon rejects undeclared types). It survives for `open -a` and scripts.
@@ -220,8 +228,19 @@ docs/{en,ja}/               RFP (design of record)
 - **Never gate a notification on a cached authorization flag.**
   `requestAuthorization` is async; an operation that finishes first then
   skips its banner silently (this shipped in v0.8.0). Resolve
-  authorization inside the posting chain, and let the post settle before a
-  one-shot launch terminates — the banner survives the quit once shown.
+  authorization inside the posting chain, and wait for `add` to succeed
+  before letting a one-shot launch terminate.
+- **A request is a batch, not N archives.** A Finder multi-selection
+  arrives as one `application(_:open:)`, and `ExtractionBatch` turns it into
+  one result — one progress bar (`BatchProgress`, weighted by archive size),
+  one destination question, one password carried forward, one summary, one
+  Finder reveal (ADR-016). Announcing per archive meant only the last banner
+  was readable, since macOS replaces one banner with the next from the same
+  app. Per-archive housekeeping (folder date, trashing the archive) stays in
+  `finishUnpack`; anything the *user* sees belongs to the batch. A password
+  prompt during a batch hangs off `sheet.nestedDialogHost`, not the droplet
+  window — a second sheet on the same parent would queue behind the
+  operation sheet and never appear.
 - Dialogs that hold fixed-width fields need the container-plus-explicit-
   width treatment too (the password field was being squeezed against the
   right edge). Inside them use `alignment = .leading` plus width

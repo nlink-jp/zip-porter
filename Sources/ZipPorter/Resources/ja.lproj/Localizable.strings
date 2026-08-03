@@ -84,3 +84,9 @@
 "Notification" = "通知を表示";
 "Dialog" = "ダイアログを表示";
 "Nothing" = "何も表示しない";
+"Extracted %d archives" = "%d 個のアーカイブを展開しました";
+"%1$d of %2$d archives extracted" = "%2$d 個中 %1$d 個のアーカイブを展開しました";
+"%1$d of %2$d — %3$@" = "%2$d 件中 %1$d 件目 — %3$@";
+"Could not extract these archives:" = "次のアーカイブを展開できませんでした:";
+"Cancelled — the remaining archives were not extracted." = "キャンセルしました — 残りのアーカイブは展開していません。";
+"…and %d more" = "…ほか %d 件";

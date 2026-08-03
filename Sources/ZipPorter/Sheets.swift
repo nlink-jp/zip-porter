@@ -251,6 +251,10 @@ final class OperationSheet: NSObject {
     let flag = CancellationFlag()
     private let sheet: NSWindow
     private let titleLabel: NSTextField
+    /// Which archive of the request is running ("2 of 3 — foo.zip").
+    /// Hidden for a single-archive request, where it would only repeat what
+    /// the user already knows.
+    private let scopeLabel = NSTextField(labelWithString: "")
     private let statusLabel = NSTextField(labelWithString: L("Preparing…"))
     private let detailLabel = NSTextField(labelWithString: "")
     private let indicator = NSProgressIndicator()
@@ -266,12 +270,13 @@ final class OperationSheet: NSObject {
         titleLabel = NSTextField(labelWithString: title)
         super.init()
         titleLabel.font = .boldSystemFont(ofSize: NSFont.systemFontSize)
-        for label in [statusLabel, detailLabel] {
+        for label in [scopeLabel, statusLabel, detailLabel] {
             label.font = .systemFont(ofSize: NSFont.smallSystemFontSize)
             label.textColor = .secondaryLabelColor
             label.lineBreakMode = .byTruncatingMiddle
             label.widthAnchor.constraint(equalToConstant: Self.contentWidth).isActive = true
         }
+        scopeLabel.isHidden = true
         detailLabel.usesSingleLineMode = false
         detailLabel.cell?.wraps = true
         detailLabel.isHidden = true
@@ -297,7 +302,8 @@ final class OperationSheet: NSObject {
 
         let buttons = NSStackView(views: [NSView(), cancelButton, doneButton])
         buttons.orientation = .horizontal
-        let stack = NSStackView(views: [titleLabel, indicator, statusLabel, detailLabel, buttons])
+        let stack = NSStackView(views: [titleLabel, scopeLabel, indicator,
+                                        statusLabel, detailLabel, buttons])
         stack.orientation = .vertical
         stack.alignment = .leading
         stack.spacing = 10
@@ -321,6 +327,22 @@ final class OperationSheet: NSObject {
         DialogPresenter.present(sheet, on: window)
     }
 
+    /// The window a nested dialog (a password prompt) should hang from. The
+    /// operation sheet stays up for the whole request, so a second sheet on
+    /// its *parent* would queue behind it and never appear.
+    var nestedDialogHost: NSWindow { sheet }
+
+    /// Which archive of the request is running. Called only when there is
+    /// more than one.
+    func setScope(_ text: String) {
+        scopeLabel.stringValue = text
+        guard scopeLabel.isHidden else { return }
+        scopeLabel.isHidden = false
+        if let stack = sheet.contentView {
+            sheet.setContentSize(stack.fittingSize)
+        }
+    }
+
     /// Live status line: the entry currently being processed.
     func update(_ text: String) {
         statusLabel.stringValue = text
@@ -335,6 +357,7 @@ final class OperationSheet: NSObject {
     /// dismisses it, then `completion` runs.
     func finish(title: String, summary: String, notes: [String], completion: @escaping () -> Void) {
         indicator.isHidden = true
+        scopeLabel.isHidden = true
         cancelButton.isHidden = true
         doneButton.isHidden = false
         titleLabel.stringValue = title

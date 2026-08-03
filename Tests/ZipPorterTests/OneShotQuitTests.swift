@@ -6,53 +6,30 @@ import XCTest
 /// (truncated output, silently), while its password prompt was open, and
 /// after the user had reclaimed the app from the Dock.
 final class OneShotQuitTests: XCTestCase {
-    func testIdleOneShotWithNoBannerLeavesImmediately() {
-        XCTAssertEqual(
-            OneShotQuit.decide(isOneShot: true, isBusy: false, bannerTimeRemaining: 0),
-            .now)
-    }
-
-    func testIdleOneShotWaitsOutItsBanner() {
-        XCTAssertEqual(
-            OneShotQuit.decide(isOneShot: true, isBusy: false, bannerTimeRemaining: 3.2),
-            .afterBanner(3.2))
+    func testIdleOneShotLeavesImmediately() {
+        XCTAssertEqual(OneShotQuit.decide(isOneShot: true, isBusy: false), .now)
     }
 
     /// The truncated-extraction and killed-password-prompt cases: a second
-    /// archive arrived while the process was winding down.
+    /// archive arrived while the process was winding down. "Busy" covers
+    /// running, queued, and waiting on the user.
     func testBusyNeverQuits() {
-        XCTAssertEqual(
-            OneShotQuit.decide(isOneShot: true, isBusy: true, bannerTimeRemaining: 0),
-            .stay)
+        XCTAssertEqual(OneShotQuit.decide(isOneShot: true, isBusy: true), .stay)
     }
 
-    /// Busy outranks a finished banner — the banner belongs to the previous
-    /// job and says nothing about the one now running.
-    func testBusyOutranksAnExpiredBanner() {
-        XCTAssertEqual(
-            OneShotQuit.decide(isOneShot: true, isBusy: true, bannerTimeRemaining: 2.0),
-            .stay)
-    }
-
-    /// The Dock-click case: the user asked for the app, so it stays even
-    /// though the previous run had already scheduled its exit.
+    /// The Dock-click case: the user asked for the app, so it stays.
     func testReclaimedAppNeverQuits() {
         for busy in [true, false] {
-            for banner in [0.0, 2.5] {
-                XCTAssertEqual(
-                    OneShotQuit.decide(isOneShot: false, isBusy: busy,
-                                       bannerTimeRemaining: banner),
-                    .stay,
-                    "isBusy=\(busy) banner=\(banner)")
-            }
+            XCTAssertEqual(OneShotQuit.decide(isOneShot: false, isBusy: busy), .stay,
+                           "isBusy=\(busy)")
         }
     }
 
-    /// The decision is re-evaluated when the timer fires, so it must be a
-    /// pure function of the state passed in — never of when it is called.
+    /// Nothing about the answer may depend on when it is asked — there is no
+    /// clock in the rule, which is what removed the wind-down window
+    /// entirely (ADR-016).
     func testDecisionIsAFunctionOfItsInputsOnly() {
-        let first = OneShotQuit.decide(isOneShot: true, isBusy: false, bannerTimeRemaining: 1.0)
-        let second = OneShotQuit.decide(isOneShot: true, isBusy: false, bannerTimeRemaining: 1.0)
-        XCTAssertEqual(first, second)
+        XCTAssertEqual(OneShotQuit.decide(isOneShot: true, isBusy: false),
+                       OneShotQuit.decide(isOneShot: true, isBusy: false))
     }
 }

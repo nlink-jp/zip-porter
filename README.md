@@ -40,19 +40,24 @@ Launch ZipPorter and drop things on the window:
   again"; re-enable in Settings)
 - **Drop a `.zip`** (or double-click one — ZipPorter registers as a ZIP
   handler) → it is extracted. Encrypted archives prompt for the password
+- **Select several `.zip` files and open them together** → they are
+  extracted as one job: one progress bar across the whole set ("2 of 3 —
+  foo.zip"), one question if the destination is set to *ask every time*,
+  one password tried across the set, one result, one Finder reveal. An
+  archive that fails does not stop the rest — the result says "2 of 3
+  extracted" and names what failed
 - Both operations show a status dialog with a byte-accurate progress bar
   while they run. How a clean finish is announced is up to you — a
-  notification (default), a dialog, or nothing (Settings › General). The
-  result dialog appears regardless when something needs reading — skipped
-  unsafe paths, skipped symlinks, renamed duplicates. Excluded macOS
-  metadata is routine and just goes in the completion line. A ZIP being created
-  exists as `name.zip.part` until it is complete. An
-  archive opened by double-click shows only that dialog — no droplet
-  window — and quits the app once you dismiss it; dropping onto the window
+  notification (default), a dialog, or nothing (Settings › General).
+  Clicking the notification shows the result in Finder. The result dialog
+  appears regardless when something needs reading — skipped unsafe paths,
+  skipped symlinks, renamed duplicates, or an archive that failed. Excluded
+  macOS metadata is routine and just goes in the completion line. A ZIP
+  being created exists as `name.zip.part` until it is complete. An archive
+  opened by double-click shows only that dialog — no droplet window — and
+  the app leaves as soon as the work is done; dropping onto the window
   leaves it open for the next file. Archives opened while one is still
-  running are queued and handled in turn, and opening one during the few
-  seconds the app lingers to finish showing a notification cancels that
-  exit rather than interrupting the new job
+  running are queued and handled in turn
 - **Settings** (the gear in the window, or ⌘,) — The Unarchiver-style
   extraction preferences:
   destination (same folder / ask every time / a fixed folder), when to
