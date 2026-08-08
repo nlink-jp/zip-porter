@@ -2,6 +2,17 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- **Extraction onto a network volume (SMB/NFS) was refused as "no free
+  space: 0 KB" no matter how much space the server had.** The pre-flight
+  space budget (ADR-0001 §2) read
+  `volumeAvailableCapacityForImportantUsage`, which only answers for local
+  APFS volumes and reports 0 on network mounts. A 0 from that key now falls
+  back to the plain `volumeAvailableCapacity` (statfs) figure, which
+  network filesystems report correctly; a genuinely full disk is still
+  refused because statfs reports ~0 there too.
+
 ### Documentation
 
 - The four design records for this app moved out of the organization ADR

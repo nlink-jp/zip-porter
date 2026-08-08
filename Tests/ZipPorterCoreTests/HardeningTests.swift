@@ -166,6 +166,34 @@ final class HardeningTests: XCTestCase {
         XCTAssertNoThrow(try Unpacker.unpack(zipURL: ours, options: unpackOptions()))
     }
 
+    func testFreeSpaceOnNetworkVolumeFallsBackToStatfsFigure() {
+        // SMB mounts report 0 for the important-usage key while statfs
+        // knows the real figure — the 0 must not read as a full disk.
+        XCTAssertEqual(
+            Unpacker.resolveFreeSpace(importantUsage: 0, plain: 3_275_891_720_192),
+            3_275_891_720_192)
+        XCTAssertEqual(Unpacker.resolveFreeSpace(importantUsage: nil, plain: 500), 500)
+    }
+
+    func testFreeSpacePrefersTheLargerPurgeableAwareFigure() {
+        // On local APFS the important-usage key counts purgeable space, so
+        // it can exceed statfs; the budget should use the real headroom.
+        XCTAssertEqual(Unpacker.resolveFreeSpace(importantUsage: 1000, plain: 700), 1000)
+    }
+
+    func testFreeSpaceOnGenuinelyFullDiskStillReadsAsZero() {
+        // Both sources agreeing on ~0 is a real full disk, not a network
+        // artifact — the refusal must survive the fallback.
+        XCTAssertEqual(Unpacker.resolveFreeSpace(importantUsage: 0, plain: 0), 0)
+    }
+
+    func testFreeSpaceWithNoUsableSourceIsUnknown() {
+        // Unknown disables the budget check rather than fabricating a figure.
+        XCTAssertNil(Unpacker.resolveFreeSpace(importantUsage: nil, plain: nil))
+        XCTAssertNil(Unpacker.resolveFreeSpace(importantUsage: 0, plain: nil))
+        XCTAssertNil(Unpacker.resolveFreeSpace(importantUsage: -5, plain: nil))
+    }
+
     /// Hand-build a one-entry archive whose central directory claims a
     /// preposterous uncompressed size (ZIP64 fields, no real payload).
     private func makeArchiveDeclaring(bytes: UInt64, at url: URL) throws {

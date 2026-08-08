@@ -163,6 +163,14 @@ docs/{en,ja}/               RFP (design of record) + adr/ (0001 hardening,
 - **Local-header name/extra lengths can differ from the central directory's**
   — data offsets must be computed from the local copies; sizes/CRC from the
   central directory (authoritative).
+- **`volumeAvailableCapacityForImportantUsage` answers only for local APFS
+  volumes — on a network mount (SMB/NFS) it reports 0, not nil.** Taken at
+  face value that 0 turns the ADR-0001 §2 space budget into "refuse every
+  extraction onto a file server: 0 KB free" (shipped that way through
+  v0.11.0). `Unpacker.resolveFreeSpace` treats 0/negative from that key as
+  "no answer" and falls back to `volumeAvailableCapacity` (statfs), which
+  network filesystems do report; a genuinely full disk still refuses
+  because statfs is ~0 there too. Don't "simplify" it back to one key.
 - CLI routing must let flag-style argv fall through to the GUI
   (LaunchServices injects `-psn_…` / `-NS…`); only an unrecognized bare
   word is a CLI error.

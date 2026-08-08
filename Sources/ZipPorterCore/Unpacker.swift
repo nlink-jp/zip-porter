@@ -67,11 +67,29 @@ public enum Unpacker {
     /// Free bytes on the volume holding `url`, or nil when unavailable
     /// (the budget check then simply does not run).
     static func freeSpace(at url: URL) -> UInt64? {
-        guard let values = try? url.resourceValues(
-            forKeys: [.volumeAvailableCapacityForImportantUsageKey]),
-            let capacity = values.volumeAvailableCapacityForImportantUsage
-        else { return nil }
-        return capacity >= 0 ? UInt64(capacity) : nil
+        let values = try? url.resourceValues(
+            forKeys: [.volumeAvailableCapacityForImportantUsageKey,
+                      .volumeAvailableCapacityKey])
+        return resolveFreeSpace(
+            importantUsage: values?.volumeAvailableCapacityForImportantUsage,
+            plain: values?.volumeAvailableCapacity)
+    }
+
+    /// The important-usage key (purgeable-aware) only answers for local
+    /// APFS volumes; on network mounts (SMB/NFS) it reports 0, which must
+    /// read as "no answer" — not as a full disk — or every extraction onto
+    /// a file server is refused. A 0 there falls through to the statfs
+    /// figure, which network filesystems do report; a genuinely full disk
+    /// still refuses because statfs reports ~0 too.
+    static func resolveFreeSpace(importantUsage: Int64?, plain: Int?) -> UInt64? {
+        var candidates: [UInt64] = []
+        if let important = importantUsage, important > 0 {
+            candidates.append(UInt64(important))
+        }
+        if let plain, plain >= 0 {
+            candidates.append(UInt64(plain))
+        }
+        return candidates.max()
     }
 
     /// Split a decoded entry name into safe path components, or nil when the
