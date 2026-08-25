@@ -25,6 +25,8 @@
     </array>
     <key>LSMinimumSystemVersion</key>
     <string>14.0</string>
+    <key>LSMultipleInstancesProhibited</key>
+    <true/>
     <key>CFBundleDocumentTypes</key>
     <array>
         <dict>

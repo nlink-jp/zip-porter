@@ -2,6 +2,21 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- Clicking a completion banner could start a second copy of the app
+  while one was still running: notificationd opens the app via
+  LaunchServices by bundle identifier, and with more than one registered
+  copy of the .app (dev build in `dist/`, `/Applications`) it may launch
+  a different copy than the running one. The GUI is now single-instance
+  at two layers: `LSMultipleInstancesProhibited` in Info.plist makes
+  LaunchServices route the click to the running instance, and a startup
+  guard in the GUI path exits with a stderr note when another instance
+  is already running (covers direct binary exec and `open -n`). CLI
+  subcommands are not guarded — concurrent `pack`/`unpack` runs keep
+  working. The one-shot flow is unchanged: with no instance running, a
+  banner click still launches a fresh process to reveal the result
+
 ## [v0.11.1] - 2026-08-09
 
 ### Fixed

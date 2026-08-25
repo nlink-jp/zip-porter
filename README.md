@@ -70,6 +70,11 @@ Launch ZipPorter and drop things on the window:
   (⌘X / ⌘C / ⌘V / ⌘A / ⌘Z), and ⌘W closes the droplet window, which ends
   the session just like clicking its red button
 
+The GUI is single-instance: starting a second copy (for example, a
+completion-banner click resolving to a different copy of the .app) logs
+to stderr and exits, leaving the running instance alone. CLI runs are
+not affected — concurrent `pack`/`unpack` invocations keep working.
+
 ## CLI
 
 The same binary inside the app doubles as a CLI. Installing the cask puts

@@ -48,7 +48,7 @@ Sources/ZipPorterCore/      UI-independent engine (no AppKit): CRC32, DOSDateTim
                             ZipStructures, DeflateStream, ZipReader, ZipWriter,
                             ZipCryptoCipher, WinZipAES, EncodingDetector,
                             JunkFilter, FileNameTransform, Packer, Unpacker, PathUtil,
-                            PosixPermissions, XattrUtil, ZeroingBytes
+                            PosixPermissions, XattrUtil, ZeroingBytes, SingleInstance
 Sources/ZipPorter/          AppKit app + CLI: App (entry/routing/delegate), CLI (usage),
                             CLICommands (parse + run), PasswordPrompt, MainMenu,
                             MainViewController (flows), OneShotQuit (lifetime
@@ -112,6 +112,20 @@ docs/{en,ja}/               RFP (design of record) + adr/ (0001 hardening,
 
 ## Gotchas
 
+- **Notification clicks launch by bundle ID — enforce a single GUI instance.**
+  Clicking a completion banner makes notificationd open the app via
+  LaunchServices, which resolves `jp.nlink.zip-porter` among *all*
+  registered copies (`dist/` dev builds, release-verification
+  extractions, `/Applications`) and may start a different copy than a
+  still-running one. Guarded at two layers: `LSMultipleInstancesProhibited`
+  (Info.plist — with an instance running, LS routes the click to it and
+  its `CompletionNotifier` reveals the result) and a startup check at the
+  top of `runGUI()` (`singleInstanceDecision` in ZipPorterCore, tested)
+  that exits with a stderr note (covers direct exec / `open -n`). The
+  guard deliberately covers only the GUI path: `pack`/`unpack`/`inspect`
+  stay concurrent, and the ADR-0004 one-shot flow is unchanged — with no
+  instance running, a banner click still launches a fresh process. Side
+  effect: to run a `dist/` build's GUI, quit the installed instance first.
 - **Never use SwiftPM's `Bundle.module`; use `Bundle.appResources`.** The
   generated `Bundle.module` accessor only tries `<name>.bundle` beside
   `Bundle.main.bundleURL` (the `.app` root, not `Contents/Resources`) and

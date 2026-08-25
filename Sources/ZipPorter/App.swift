@@ -1,4 +1,5 @@
 import AppKit
+import ZipPorterCore
 
 enum AppInfo {
     /// The app's short version (from Info.plist), with any leading "v"
@@ -68,6 +69,26 @@ enum ZipPorterMain {
     }
 
     private static func runGUI() {
+        // A second GUI copy would double the droplet and race the open
+        // events. LSMultipleInstancesProhibited (Info.plist) stops
+        // LaunchServices launches (the completion-banner click resolves to
+        // the running instance instead of another copy); this guard stops
+        // the rest (direct exec, `open -n`). CLI subcommands stay unguarded
+        // — concurrent pack/unpack runs are legitimate.
+        let bundleID = Bundle.main.bundleIdentifier
+        let instancePIDs = bundleID.map { id in
+            NSRunningApplication.runningApplications(withBundleIdentifier: id)
+                .map(\.processIdentifier)
+        } ?? []
+        if case .exitDuplicate(let message) = singleInstanceDecision(
+            bundleID: bundleID,
+            ownPID: ProcessInfo.processInfo.processIdentifier,
+            instancePIDs: instancePIDs
+        ) {
+            FileHandle.standardError.write(Data((message + "\n").utf8))
+            exit(0)
+        }
+
         let app = NSApplication.shared
         let delegate = AppDelegate()
         Self.delegate = delegate
