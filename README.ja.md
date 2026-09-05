@@ -158,9 +158,14 @@ zip-porter --version
 せず store します。さらに大きなファイルは独立ブロックに分けて並列圧縮
 （zlib、pigz 方式の連結）するため、単一 180MB のファイルも 12 コア機で
 1 秒未満で圧縮できます。310MB / 150 ファイルの混合コーパスは 1.8 秒
-（Apple `ditto` は 6.9 秒）で、出力サイズは同等です。設計の詳細:
+（Apple `ditto` は 6.9 秒）で、出力サイズは同等です。ファイル数がいくら
+多くてもメモリ使用量は有界です。ファイルごとのしきい値、またはコア数に
+応じた総量予算を超えた圧縮結果は、アーカイブと同じ場所の隠し一時ファイル
+1 本に退避し、圧縮の終了時（成功・失敗・キャンセルを問わず）に削除します。
+設計の詳細:
 [ADR-0002](docs/ja/adr/0002-parallel-compression.ja.md)、
-[ADR-0003](docs/ja/adr/0003-zlib-parallel-deflate.ja.md)。
+[ADR-0003](docs/ja/adr/0003-zlib-parallel-deflate.ja.md)、
+[ADR-0005](docs/ja/adr/0005-review-response-ownership-ranges-budget.ja.md)。
 
 ### inspect（診断）
 

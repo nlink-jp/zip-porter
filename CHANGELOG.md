@@ -28,8 +28,29 @@
   length pushing the payload past EOF was likewise only caught
   mid-extraction. Each file entry's payload offset is now resolved once,
   from its local header, when the archive is opened; the overlap and EOF
-  checks use it and so does extraction. Opening costs one 30-byte read
-  per file entry (ADR-0005, review finding ZP-02)
+  checks use it and so does extraction. Opening now reads each file
+  entry's local header, through a 256 KiB window so small entries cost a
+  few hundred reads per hundred thousand entries rather than one each
+  (ADR-0005, review finding ZP-02)
+- **A failed pack could leave a partial scratch file behind.** Compressed
+  output beyond 16 MB per entry went to a scratch file that was remembered
+  only after its first write completed, and the large-file path released
+  it on some failure branches but not others — a write failing part-way
+  (disk full, a size limit) left a `zp-*.deflate` of up to 16 MB beside
+  the archive, holding pre-encryption data. Scratch storage is now one
+  hidden arena file per pack, created on first need and owned by the
+  compress call until the writer is done with it; every exit path removes
+  it through that one owner, and there are no per-entry scratch files to
+  track (ADR-0005, review finding ZP-03)
+- **Memory while packing grew with the number of files.** The 16 MB spill
+  threshold bounded each entry while it was being compressed, but finished
+  results below it stayed in memory until every entry was done — 64
+  one-megabyte files held 50 MB, ten thousand would have held their whole
+  compressed size. Finished results now share an aggregate budget of
+  cores × 16 MB; results beyond it go to the scratch arena like oversized
+  ones, so peak memory is bounded regardless of input size. The archive
+  bytes do not depend on where a result was held (ADR-0005, review finding
+  ZP-04)
 
 ## [v0.11.2] - 2026-08-25
 

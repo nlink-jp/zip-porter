@@ -170,9 +170,14 @@ rather than deflated — faster, and smaller. Large files additionally
 compress as independent blocks in parallel (zlib, the pigz join), so a
 single 180 MB file packs in under a second on a 12-core machine; a
 310 MB / 150-file mixed corpus takes 1.8 s where Apple `ditto` needs 6.9 s
-— at the same output size. Design notes:
+— at the same output size. Memory stays bounded however many files are
+packed: compressed output beyond a per-file threshold, or beyond an
+aggregate budget scaled to the core count, goes to one hidden scratch file
+beside the archive that is removed when the pack ends, however it ends.
+Design notes:
 [ADR-0002](docs/en/adr/0002-parallel-compression.md),
-[ADR-0003](docs/en/adr/0003-zlib-parallel-deflate.md).
+[ADR-0003](docs/en/adr/0003-zlib-parallel-deflate.md),
+[ADR-0005](docs/en/adr/0005-review-response-ownership-ranges-budget.md).
 
 ### inspect
 

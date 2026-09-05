@@ -331,9 +331,9 @@ final class PackerTests: XCTestCase {
         let reader = try ZipReader(url: result.outputURL)
         let entry = try XCTUnwrap(reader.entries.first { reader.name(of: $0) == "d/big.txt" })
         XCTAssertEqual(try reader.extractData(entry), big)
-        // Scratch files must not survive the pack.
+        // The scratch arena must not survive the pack.
         let leftovers = try FileManager.default.contentsOfDirectory(atPath: workDir.path)
-            .filter { $0.hasPrefix("zp-") }
+            .filter { $0.contains("zp-scratch") }
         XCTAssertEqual(leftovers, [])
     }
 

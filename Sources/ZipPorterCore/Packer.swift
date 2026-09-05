@@ -43,6 +43,19 @@ public enum Packer {
                             options: Options = Options(),
                             progress: ((OperationProgress) -> Void)? = nil,
                             shouldCancel: (() -> Bool)? = nil) throws -> Result {
+        try pack(inputs: inputs, output: output, options: options, limits: .default,
+                 progress: progress, shouldCancel: shouldCancel)
+    }
+
+    /// `limits` are the compressor's knobs (spill threshold, memory budget,
+    /// scratch opener). Production runs on the defaults; tests pass small
+    /// ones and a failing opener instead of mutating process-wide state.
+    static func pack(inputs: [URL],
+                     output: URL,
+                     options: Options,
+                     limits: ParallelCompressor.Limits,
+                     progress: ((OperationProgress) -> Void)?,
+                     shouldCancel: (() -> Bool)?) throws -> Result {
         // Collect (archivePath, fileURL?, isDirectory) first so entries are
         // sorted and junk/symlinks decided before any byte is written.
         struct Item {
@@ -150,19 +163,24 @@ public enum Packer {
             !ZipWriter.storeExtensions.contains((item.archivePath as NSString).pathExtension.lowercased())
                 && ParallelCompressor.isWorthDeflating(item.url)
         }
-        var compressed: [ParallelCompressor.Result?] = []
+        var compressed: ParallelCompressor.Output?
         if deflatable.contains(true) {
             compressed = try ParallelCompressor.compress(
                 fileItems.map(\.element.url),
                 deflate: deflatable,
                 scratchDirectory: actualOutput.deletingLastPathComponent(),
+                limits: limits,
                 onBytes: { report(nil, adding: $0) },
                 shouldCancel: shouldCancel)
         }
-        defer { ParallelCompressor.cleanUp(compressed) }
+        // The scratch arena the spilled results live in belongs to this
+        // pack from here on; one release, whatever happens below.
+        defer { compressed?.cleanUp() }
         var precompressed: [Int: ParallelCompressor.Result] = [:]
-        for (slot, (index, _)) in fileItems.enumerated() where slot < compressed.count {
-            if let result = compressed[slot] { precompressed[index] = result }
+        if let results = compressed?.results {
+            for (slot, (index, _)) in fileItems.enumerated() where slot < results.count {
+                if let result = results[slot] { precompressed[index] = result }
+            }
         }
 
         let writer = try ZipWriter(url: tempOutput, options: writerOptions)

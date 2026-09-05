@@ -53,6 +53,19 @@ final class ArchitectureTests: XCTestCase {
                        "PathUtil's existence answers are lstat-based")
     }
 
+    func testCompressionScratchHasOneLifecycle() throws {
+        // One arena per compress call: opened in one place, removed in one
+        // place. A second open or a second `removeItem` would be a second
+        // lifecycle to keep straight on every exit path — the shape of the
+        // per-entry scratch files this replaced.
+        let compressor = try source("ParallelCompressor.swift")
+        XCTAssertEqual(occurrences(of: "openScratch(", in: compressor), 1, "the arena opens its file once")
+        XCTAssertEqual(occurrences(of: "createExclusively(", in: compressor), 1, "the default opener")
+        XCTAssertEqual(occurrences(of: "removeItem(", in: compressor), 1, "ScratchArena.remove is the only remover")
+        XCTAssertEqual(occurrences(of: "static var", in: compressor), 2,
+                       "knobs travel in Limits; only blockParallelThreshold and Limits.default remain static")
+    }
+
     // MARK: - Class B: one derivation of the entry data offset
 
     func testEntryDataOffsetIsDerivedExactlyOnce() throws {

@@ -99,9 +99,19 @@ docs/{en,ja}/               RFP (design of record) + adr/ (0001 hardening,
 - **Packing compresses in parallel and writes sequentially** (ADR-0002).
   Entry order comes from `Packer`'s sort, so output stays byte-for-byte
   deterministic — there is a test for that; keep it. Encryption stays in
-  the sequential write phase (per-entry salts), and `ParallelCompressor`
-  spills compressed output above 16 MB to scratch files that the writer
-  drains and `cleanUp` deletes on every exit path.
+  the sequential write phase (per-entry salts). `ParallelCompressor`
+  spills compressed output above 16 MB per entry — and finished results
+  beyond an aggregate budget of cores × 16 MB (ADR-0005) — into **one
+  hidden scratch arena per pack** (`.zp-scratch-<uuid>` beside the
+  archive, created on first need); results reference byte ranges in it,
+  the writer reads them back, and `Output.cleanUp()` removes it on every
+  exit path. Deliberately no per-entry scratch files: a file per entry
+  meant a lifecycle per entry to get right on every failure branch
+  (shipped wrong through v0.11.2), and with the budget it would have meant
+  thousands of files flickering in the user's folder. The knobs travel in
+  `ParallelCompressor.Limits`, passed per call — tests pass small ones and
+  a failing scratch opener rather than mutating statics.
+  `ArchitectureTests` pins one opener, one remover.
 - **Deflate is zlib (CZlib system library), inflate is the Compression
   framework** (ADR-0003). Files ≥ 32 MB compress as ~16 MB blocks in
   bounded waves: every data block ends with Z_SYNC_FLUSH (no BFINAL), and
