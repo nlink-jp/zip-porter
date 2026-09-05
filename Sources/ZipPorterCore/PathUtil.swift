@@ -84,11 +84,25 @@ public enum PathUtil {
         }
     }
 
+    /// True when *anything* sits at `url` — a file, a directory, or a
+    /// symlink whether or not its target exists. `fileExists(atPath:)`
+    /// follows symlinks and reports a dangling one as absent, which would
+    /// make the uniqueness check and the exclusive create disagree about
+    /// what "exists" means: the check picks the name, the create fails on
+    /// it. Both sides now use the `lstat(2)` answer (ADR-0005).
+    public static func somethingExists(at url: URL) -> Bool {
+        var info = stat()
+        return url.withUnsafeFileSystemRepresentation { path in
+            guard let path else { return false }
+            return lstat(path, &info) == 0
+        }
+    }
+
     /// Return `url` if nothing exists there, else the numbered variant.
     public static func uniqueURL(_ url: URL) -> URL {
         let dir = url.deletingLastPathComponent()
         let name = uniqueName(url.lastPathComponent) {
-            FileManager.default.fileExists(atPath: dir.appendingPathComponent($0).path)
+            somethingExists(at: dir.appendingPathComponent($0))
         }
         return dir.appendingPathComponent(name)
     }

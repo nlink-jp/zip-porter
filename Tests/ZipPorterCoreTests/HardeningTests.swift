@@ -411,10 +411,12 @@ final class HardeningTests: XCTestCase {
                        "the other writer's file must survive the failed extraction untouched")
     }
 
-    func testFailedExtractionLeavesADanglingSymlinkAlone() throws {
-        // `fileExists` follows symlinks, so a dangling link is invisible to
-        // the uniqueness check; the exclusive create then fails on it. The
-        // link is not something this extraction made.
+    func testDanglingSymlinkAtAPlannedNameIsTreatedAsTaken() throws {
+        // `fileExists` follows symlinks and calls a dangling one absent, so
+        // the uniqueness check would pick the name and the exclusive create
+        // would then fail on it — and the old cleanup deleted the link. The
+        // check now uses lstat semantics: the name is taken, the entry lands
+        // on "report 2.txt", the link is not touched.
         let source = workDir.appendingPathComponent("one.zip")
         let writer = try ZipWriter(url: source)
         try writer.addFile("report.txt", data: Data("ours\n".utf8))
@@ -427,44 +429,80 @@ final class HardeningTests: XCTestCase {
         var options = Unpacker.Options()
         options.destination = dest
 
-        XCTAssertThrowsError(try Unpacker.unpack(zipURL: source, options: options))
+        let result = try Unpacker.unpack(zipURL: source, options: options)
+        XCTAssertEqual(result.root.lastPathComponent, "report 2.txt")
+        XCTAssertEqual(try Data(contentsOf: result.root), Data("ours\n".utf8))
         XCTAssertEqual(try FileManager.default.destinationOfSymbolicLink(atPath: link.path),
                        nowhere.path, "the pre-existing symlink must survive")
     }
 
-    func testFailedExtractionRemovesOnlyTheTopLevelItemsItCreated() throws {
-        // Two top-level folders extracted straight into the destination.
-        // Another writer creates the second folder, with content, after
-        // the first has been extracted. The first is ours and goes; the
-        // second is theirs and stays, content included.
+    func testTopLevelFoldersAreClaimedBeforeTheFirstByteIsWritten() throws {
+        // The window between the uniqueness check and the claim must not
+        // span the extraction: every top-level folder exists — created by
+        // us — when the first entry's progress callback fires.
         let source = workDir.appendingPathComponent("two.zip")
         let writer = try ZipWriter(url: source)
         try writer.addFile("alpha/a.txt", data: Data("A".utf8))
         try writer.addFile("beta/b.txt", data: Data("B".utf8))
+        try writer.addFile("gamma", data: Data("G".utf8))
         try writer.finalize()
         let dest = workDir.appendingPathComponent("dest")
         try FileManager.default.createDirectory(at: dest, withIntermediateDirectories: true)
         var options = Unpacker.Options()
         options.destination = dest
         options.folderPolicy = .never
-        let theirs = dest.appendingPathComponent("beta/theirs.txt")
+
+        var seenAtFirstCallback: [String]?
+        _ = try Unpacker.unpack(zipURL: source, options: options, progress: { _ in
+            if seenAtFirstCallback == nil {
+                seenAtFirstCallback = try? FileManager.default.contentsOfDirectory(atPath: dest.path).sorted()
+            }
+        })
+        XCTAssertEqual(seenAtFirstCallback, ["alpha", "beta"],
+                       "folders are claimed up front; the top-level file is claimed by its own create")
+    }
+
+    func testFailedExtractionRemovesOnlyTheTopLevelItemsItCreated() throws {
+        // Two top-level files extracted straight into the destination.
+        // Another writer creates the second one after the first has been
+        // extracted. The first is ours and goes; the second is theirs and
+        // stays with its content.
+        let source = workDir.appendingPathComponent("two.zip")
+        let writer = try ZipWriter(url: source)
+        try writer.addFile("a.txt", data: Data("A".utf8))
+        try writer.addFile("b.txt", data: Data("B".utf8))
+        try writer.finalize()
+        let dest = workDir.appendingPathComponent("dest")
+        try FileManager.default.createDirectory(at: dest, withIntermediateDirectories: true)
+        var options = Unpacker.Options()
+        options.destination = dest
+        options.folderPolicy = .never
+        let theirs = dest.appendingPathComponent("b.txt")
 
         var interposed = false
         XCTAssertThrowsError(try Unpacker.unpack(zipURL: source, options: options, progress: { p in
-            guard p.currentPath == "beta/b.txt", !interposed else { return }
+            guard p.currentPath == "b.txt", !interposed else { return }
             interposed = true
-            try? FileManager.default.createDirectory(at: theirs.deletingLastPathComponent(),
-                                                     withIntermediateDirectories: false)
             try? Data("theirs".utf8).write(to: theirs)
         })) { error in
             XCTAssertEqual((error as NSError).code, Int(EEXIST), "\(error)")
         }
         XCTAssertTrue(interposed)
         XCTAssertEqual(try Data(contentsOf: theirs), Data("theirs".utf8),
-                       "the other writer's folder and file must survive")
-        XCTAssertFalse(FileManager.default.fileExists(atPath: dest.appendingPathComponent("alpha").path),
-                       "our own half-written top-level folder must be removed")
-        XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: dest.path), ["beta"])
+                       "the other writer's file must survive")
+        XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: dest.path), ["b.txt"],
+                       "our own a.txt must be removed; nothing else may remain")
+    }
+
+    func testFailureMidEntryRemovesThePartialFileThroughTheLedger() throws {
+        // The only remover is the ledger: a size-lying entry inside a
+        // wrapper leaves no wrapper, and inside a `.never` folder leaves no
+        // folder — the partial file goes with its owned top-level item.
+        let bomb = try fixture("hostile-size-lie")
+        var options = unpackOptions()
+        options.folderPolicy = .always
+        XCTAssertThrowsError(try Unpacker.unpack(zipURL: bomb, options: options))
+        XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: workDir.path), [])
     }
 
     func testSuccessfulExtractionStillReportsEveryTopLevelItem() throws {

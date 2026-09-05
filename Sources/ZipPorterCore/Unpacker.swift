@@ -242,8 +242,7 @@ public enum Unpacker {
             for top in topNames.sorted() {
                 let final = PathUtil.uniqueName(top) { candidate in
                     assigned.contains(candidate)
-                        || FileManager.default.fileExists(
-                            atPath: destBase.appendingPathComponent(candidate).path)
+                        || PathUtil.somethingExists(at: destBase.appendingPathComponent(candidate))
                 }
                 assigned.insert(final)
                 if final != top { renames[top] = final }
@@ -252,6 +251,14 @@ public enum Unpacker {
             base = destBase
             root = topItems.count == 1 ? topItems[0] : destBase
         }
+        // Top-level names that need a folder — directory entries, and the
+        // parents of nested files. Claimed below, before any byte is
+        // written; top-level *files* are claimed by their own O_EXCL create
+        // when reached, since a file cannot be claimed without being written.
+        let topDirectories = wrap ? [] : Set(
+            work.filter { $0.entry.isDirectory || $0.components.count > 1 }
+                .map { renames[$0.components[0]] ?? $0.components[0] })
+            .sorted()
 
         var files = 0
         var directories = 0
@@ -291,16 +298,18 @@ public enum Unpacker {
         }
 
         // Without a wrapper the top-level items sit directly in the
-        // destination, so each is claimed with an exclusive create the first
-        // time an entry needs it; everything beneath a claimed item is ours
-        // by construction. Inside a wrapper, the wrapper is the claim.
-        var claimedTops = Set<String>()
-        func claimTopLevelDirectory(_ top: String) throws {
-            guard !wrap, !claimedTops.contains(top) else { return }
-            let url = base.appendingPathComponent(top)
-            try PathUtil.createDirectoryExclusively(at: url)
-            owned.adopt(url)
-            claimedTops.insert(top)
+        // destination. Each top-level folder is claimed with an exclusive
+        // mkdir before the first entry is written, so a name another
+        // process took since the uniqueness check fails here — with nothing
+        // written yet — rather than minutes later. Everything created
+        // beneath a claimed folder during this extraction is ours; inside
+        // a wrapper, the wrapper is the claim.
+        func claimTopLevelDirectories() throws {
+            for top in topDirectories {
+                let url = base.appendingPathComponent(top)
+                try PathUtil.createDirectoryExclusively(at: url)
+                owned.adopt(url)
+            }
         }
 
         func extractAll() throws {
@@ -315,10 +324,6 @@ public enum Unpacker {
                     components[0] = renamed
                 }
                 let target = components.reduce(base) { $0.appendingPathComponent($1) }
-                let isTopLevelFile = !entry.isDirectory && components.count == 1
-                if !isTopLevelFile {
-                    try claimTopLevelDirectory(components[0])
-                }
 
                 if entry.isDirectory {
                     try FileManager.default.createDirectory(at: target, withIntermediateDirectories: true)
@@ -329,12 +334,13 @@ public enum Unpacker {
                         at: target.deletingLastPathComponent(), withIntermediateDirectories: true)
                     recordDirectories(components.dropLast())
                     let out = try PathUtil.createExclusively(at: target)
-                    if isTopLevelFile, !wrap {
-                        // O_EXCL succeeded: this file is ours, and it is a
-                        // top-level item in its own right.
+                    if !wrap, components.count == 1 {
+                        // O_EXCL succeeded: this top-level file is ours.
                         owned.adopt(target)
-                        claimedTops.insert(components[0])
                     }
+                    // A failure below leaves the partial file to the outer
+                    // cleanup: it lives inside an owned top-level item (or is
+                    // one), and the ledger is the only remover (ADR-0005).
                     do {
                         try reader.extract(entry, password: options.password) { chunk in
                             try out.write(contentsOf: chunk)
@@ -346,7 +352,6 @@ public enum Unpacker {
                         try out.close()
                     } catch {
                         try? out.close()
-                        try? FileManager.default.removeItem(at: target)
                         throw error
                     }
                     files += 1
@@ -371,6 +376,7 @@ public enum Unpacker {
         }
 
         do {
+            try claimTopLevelDirectories()
             try extractAll()
             // Directories last: the attribute survives writes into them,
             // and doing it here covers implicit parents in one pass.

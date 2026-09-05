@@ -13,8 +13,11 @@
   into. Top-level items are now created exclusively (`mkdir(2)` /
   `O_EXCL`) and recorded in an ownership ledger only when that create
   succeeds; the failure path removes what the ledger holds and nothing
-  else. A name taken in that window now fails the extraction with `File
-  exists` instead
+  else. Top-level folders are claimed before the first byte is written, so
+  a name taken in that window fails the extraction up front with `File
+  exists` rather than after minutes of work. A dangling symlink at a
+  planned name now counts as taken (the name moves to "name 2") instead
+  of failing the extraction
   ([ADR-0005](docs/en/adr/0005-review-response-ownership-ranges-budget.md),
   review finding ZP-01)
 - **The overlap check could be bypassed through the local header.** Entry

@@ -180,9 +180,17 @@ docs/{en,ja}/               RFP (design of record) + adr/ (0001 hardening,
   directory) are claimed with `PathUtil.createDirectoryExclusively`
   (`mkdir(2)`: EEXIST on anything, dangling symlinks included) or `O_EXCL`,
   and enter `OwnedItems` only on success; the failure path removes the
-  ledger's contents and cannot see the planned names. Directories *below*
-  an owned item may use the permissive call — they are ours by
-  construction.
+  ledger's contents and cannot see the planned names. Folders are claimed
+  *before the first byte is written* — a lazy first-use claim would leave
+  the check-to-create window open for the whole extraction; files are
+  claimed by their own create when reached. Directories *below* an owned
+  item may use the permissive call — they are ours by construction (what a
+  third party drops into them mid-extraction goes with them on failure; an
+  accepted residual). Uniqueness checks use `PathUtil.somethingExists`
+  (`lstat`), not `fileExists(atPath:)`, which follows symlinks and calls a
+  dangling one absent — the check and the exclusive create must agree on
+  what "exists". `ArchitectureTests` pins all of this by reading the
+  source.
 - **Never do arithmetic on header values inside a bounds check.** Offsets
   and sizes out of a ZIP64 record are attacker-chosen 64-bit values, so
   `offset + size <= fileSize` overflows while evaluating itself and
