@@ -190,8 +190,15 @@ docs/{en,ja}/               RFP (design of record) + adr/ (0001 hardening,
   crash on a double-clicked `.zip`. Subtract from the known-good bound
   instead (`size <= fileSize - offset`), or check the operand first.
 - **Local-header name/extra lengths can differ from the central directory's**
-  — data offsets must be computed from the local copies; sizes/CRC from the
-  central directory (authoritative).
+  — data offsets come from the local copies; sizes/CRC from the central
+  directory (authoritative). `ZipReader.resolveEntryRanges` reads every
+  file entry's local header once at open, stores `ZipEntry.dataOffset`,
+  and runs the overlap/EOF check on it; `extract` starts there and reads
+  no header. Do not add a second derivation of the offset anywhere: the
+  check used to compute it from the central directory's name length while
+  extraction used the local lengths, and an extra field big enough to hide
+  another local header passed the check (shipped that way through
+  v0.11.2; ADR-0005).
 - **`volumeAvailableCapacityForImportantUsage` answers only for local APFS
   volumes — on a network mount (SMB/NFS) it reports 0, not nil.** Taken at
   face value that 0 turns the ADR-0001 §2 space budget into "refuse every

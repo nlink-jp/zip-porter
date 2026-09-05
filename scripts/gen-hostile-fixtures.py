@@ -196,6 +196,68 @@ def zip64_declared_size_wrap(path: str) -> None:
     write_zip(path, body, central, len(names))
 
 
+def _one_byte_local_header(name: bytes, crc: int, name_len: int, extra_len: int) -> bytes:
+    """Local header for a stored 1-byte entry with explicit length fields
+    (the name bytes themselves are appended by the caller)."""
+    return struct.pack("<I5H3I2H", LOCAL_SIG, 20, 0, 0, DOSTIME, DOSDATE,
+                       crc, 1, 1, name_len, extra_len)
+
+
+def overlap_via_local_extra(path: str) -> None:
+    """Two entries whose ranges look disjoint from the central directory
+    but read the same byte (ADR-0005).
+
+    Entry a's local header sits at 0 and declares a 32-byte extra field;
+    entry b's local header is *inside* that extra field, at offset 32.
+    Both payloads therefore start at byte 63. A check that computes the
+    data end from the central directory's name length (30 + 1 + 1 = 32
+    for a) sees [0, 32) and [32, 64) and passes; the extractor, which uses
+    the local header's lengths, reads byte 63 for both.
+    """
+    data = b"X"
+    crc = zlib.crc32(data) & 0xFFFFFFFF
+    b_header = _one_byte_local_header(b"b", crc, 1, 0) + b"b"          # 31 bytes
+    a_extra = b"\0" + b_header                                          # b's header lands at 32
+    a_header = _one_byte_local_header(b"a", crc, 1, len(a_extra)) + b"a" + a_extra
+    assert len(a_header) == 63 and a_header[32:63] == b_header
+    body = a_header + data
+    central = (central_header(b"a", crc, 1, 1, 0, 0)
+               + central_header(b"b", crc, 1, 1, 0, 32))
+    write_zip(path, body, central, 2)
+
+
+def overlap_via_local_name_length(path: str) -> None:
+    """Same shape, hidden in the local name length instead of the extra
+    field: the central directory says entry a's name is 1 byte, its local
+    header says 33 — and those 33 bytes contain entry b's local header.
+    """
+    data = b"X"
+    crc = zlib.crc32(data) & 0xFFFFFFFF
+    b_header = _one_byte_local_header(b"b", crc, 1, 0) + b"b"          # 31 bytes
+    a_local_name = b"a" + b"\0" + b_header                              # 33 bytes; b's header at 32
+    a_header = _one_byte_local_header(b"a", crc, len(a_local_name), 0) + a_local_name
+    assert len(a_header) == 63 and a_header[32:63] == b_header
+    body = a_header + data
+    central = (central_header(b"a", crc, 1, 1, 0, 0)
+               + central_header(b"b", crc, 1, 1, 0, 32))
+    write_zip(path, body, central, 2)
+
+
+def extra_field_past_eof(path: str) -> None:
+    """One entry whose local extra length pushes its payload past EOF.
+
+    The central directory is consistent with the file; only the local
+    header's extra length (1000 bytes that are not there) is hostile. The
+    payload's true position is beyond the end of the file, which a check
+    working from the central directory's lengths does not see.
+    """
+    data = b"X"
+    crc = zlib.crc32(data) & 0xFFFFFFFF
+    body = _one_byte_local_header(b"a", crc, 1, 1000) + b"a" + data
+    central = central_header(b"a", crc, 1, 1, 0, 0)
+    write_zip(path, body, central, 1)
+
+
 def main() -> None:
     if len(sys.argv) != 2:
         sys.exit("usage: gen-hostile-fixtures.py <output-dir>")
@@ -209,6 +271,9 @@ def main() -> None:
     zip64_size_overflow(os.path.join(out, "hostile-zip64-size-overflow.zip"))
     zip64_declared_size_wrap(os.path.join(out, "hostile-declared-size-wrap.zip"))
     world_writable_modes(os.path.join(out, "hostile-world-writable.zip"))
+    overlap_via_local_extra(os.path.join(out, "hostile-overlap-local-extra.zip"))
+    overlap_via_local_name_length(os.path.join(out, "hostile-overlap-local-name.zip"))
+    extra_field_past_eof(os.path.join(out, "hostile-extra-past-eof.zip"))
 
 
 if __name__ == "__main__":

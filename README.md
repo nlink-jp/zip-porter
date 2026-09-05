@@ -142,7 +142,9 @@ extraction refuses malformed archives rather than trying to salvage them
   declares is aborted mid-stream, and the whole archive is refused up front
   when its declared content cannot fit in the destination's free space
 - **Overlapping entries** — archives whose entries share compressed data
-  (the `42.zip` construction) are rejected while parsing
+  (the `42.zip` construction) are rejected while parsing; the ranges are
+  taken from the same local headers extraction reads, so an extra field
+  cannot hide the overlap
 - **Quarantine propagation** — `com.apple.quarantine` on a downloaded
   archive is copied onto everything extracted — files and folders alike,
   including folders the archive only implies — so Gatekeeper still

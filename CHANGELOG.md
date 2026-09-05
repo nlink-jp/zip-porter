@@ -17,6 +17,16 @@
   exists` instead
   ([ADR-0005](docs/en/adr/0005-review-response-ownership-ranges-budget.md),
   review finding ZP-01)
+- **The overlap check could be bypassed through the local header.** Entry
+  ranges were computed from the central directory's name length while
+  extraction read from the local header's name and extra lengths, so two
+  entries whose local headers nested inside each other's extra field
+  passed the ADR-0001 §3 check and extracted the same bytes; an extra
+  length pushing the payload past EOF was likewise only caught
+  mid-extraction. Each file entry's payload offset is now resolved once,
+  from its local header, when the archive is opened; the overlap and EOF
+  checks use it and so does extraction. Opening costs one 30-byte read
+  per file entry (ADR-0005, review finding ZP-02)
 
 ## [v0.11.2] - 2026-08-25
 

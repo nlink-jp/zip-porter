@@ -36,7 +36,7 @@ public final class ZipReader {
         fileSize = try file.seekToEnd()
         do {
             try parseCentralDirectory()
-            try validateEntryRanges()
+            try resolveEntryRanges()
         } catch {
             try? file.close()
             throw error
@@ -61,29 +61,48 @@ public final class ZipReader {
         }
     }
 
-    /// Reject archives whose entry byte ranges overlap or run past EOF.
-    /// Ranges are approximated from the central directory (local header +
-    /// name + data); the 30-byte fixed header is the floor, so overlap
-    /// detection stays conservative — it never flags a valid archive.
-    private func validateEntryRanges() throws {
-        var ranges: [(start: UInt64, end: UInt64)] = []
-        ranges.reserveCapacity(entries.count)
-        for entry in entries where !entry.isDirectory {
+    /// Resolve where each file entry's payload starts — from its *local*
+    /// header, the copy extraction reads — and reject archives whose
+    /// `[localHeaderOffset, payloadEnd)` ranges overlap or run past EOF
+    /// (ADR-0001 §3, ADR-0005). This is the one derivation of the data
+    /// offset: `extract` starts at the `dataOffset` stored here and reads no
+    /// header of its own. Computing the range from the central directory's
+    /// lengths instead let two local headers nest inside each other's extra
+    /// field and pass. Entries are visited in offset order so the header
+    /// reads are sequential.
+    private func resolveEntryRanges() throws {
+        let order = entries.indices
+            .filter { !entries[$0].isDirectory }
+            .sorted { entries[$0].localHeaderOffset < entries[$1].localHeaderOffset }
+        var previousEnd: UInt64 = 0
+        for (rank, index) in order.enumerated() {
+            let entry = entries[index]
             let start = entry.localHeaderOffset
-            let minimumHeader = UInt64(30 + entry.rawName.count)
-            // An offset+size that wraps is out of bounds by definition;
-            // wrapping arithmetic here would fold it back into range and
-            // hand the entry a pass on the overlap check below.
-            let (headerEnd, headerOverflow) = start.addingReportingOverflow(minimumHeader)
-            let (end, dataOverflow) = headerEnd.addingReportingOverflow(entry.compressedSize)
-            guard !headerOverflow, !dataOverflow, end <= fileSize else {
+            // Every bound is a subtraction from the known-good `fileSize`:
+            // offset and lengths are attacker-chosen, and an addition inside
+            // the check would be the overflow the check exists to catch.
+            guard start <= fileSize, fileSize - start >= 30 else {
+                throw ZipReaderError.corrupt("local header at \(start) past end of file")
+            }
+            let lh = try read(at: start, count: 30)
+            guard try lh.readU32(at: 0) == Zip.localHeaderSignature else {
+                throw ZipReaderError.corrupt("local header at \(start)")
+            }
+            let headerLength = 30 + UInt64(try lh.readU16(at: 26)) + UInt64(try lh.readU16(at: 28))
+            guard headerLength <= fileSize - start else {
                 throw ZipReaderError.corrupt("entry data runs past end of file")
             }
-            ranges.append((start, end))
-        }
-        ranges.sort { $0.start < $1.start }
-        for i in 1..<max(ranges.count, 1) where ranges[i].start < ranges[i - 1].end {
-            throw ZipReaderError.overlappingEntries
+            let dataOffset = start + headerLength
+            guard entry.compressedSize <= fileSize - dataOffset else {
+                throw ZipReaderError.corrupt("entry data runs past end of file")
+            }
+            entries[index].dataOffset = dataOffset
+            // Sorted by start and disjoint so far, so `previousEnd` is the
+            // furthest byte any earlier entry reaches.
+            if rank > 0, start < previousEnd {
+                throw ZipReaderError.overlappingEntries
+            }
+            previousEnd = dataOffset + entry.compressedSize
         }
     }
 
@@ -277,15 +296,11 @@ public final class ZipReader {
             throw ZipReaderError.unsupportedMethod(effectiveMethod.rawValue)
         }
 
-        // The local header's name/extra lengths can differ from the central
-        // directory's; data starts after the *local* copies.
-        let lh = try read(at: entry.localHeaderOffset, count: 30)
-        guard try lh.readU32(at: 0) == Zip.localHeaderSignature else {
-            throw ZipReaderError.corrupt("local header for \(name(of: entry))")
-        }
-        let nameLen = Int(try lh.readU16(at: 26))
-        let extraLen = Int(try lh.readU16(at: 28))
-        var offset = entry.localHeaderOffset + 30 + UInt64(nameLen + extraLen)
+        // Where the payload starts was resolved from the local header at
+        // open, together with the overlap/EOF check (`resolveEntryRanges`,
+        // ADR-0005). Reading the header again here would be a second
+        // derivation of the same fact — the gap the check used to have.
+        var offset = entry.dataOffset
         var remaining = entry.compressedSize
 
         var decryptor: EntryDecryptor?

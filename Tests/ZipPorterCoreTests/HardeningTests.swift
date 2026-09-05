@@ -83,6 +83,55 @@ final class HardeningTests: XCTestCase {
         XCTAssertNoThrow(try ZipReader(url: ours))
     }
 
+    // The range class (ADR-0005): the check and the read must derive the
+    // payload position from the same header. These fixtures look disjoint
+    // from the central directory and coincide in the local headers.
+
+    func testOverlapHiddenInALocalExtraFieldIsRejectedAtOpen() throws {
+        // Entry b's local header sits inside entry a's 32-byte extra field;
+        // central-directory arithmetic sees [0,32) and [32,64), while both
+        // payloads start at byte 63.
+        XCTAssertThrowsError(try ZipReader(url: try fixture("hostile-overlap-local-extra"))) { error in
+            XCTAssertEqual(error as? ZipReaderError, .overlappingEntries)
+        }
+    }
+
+    func testOverlapHiddenInALocalNameLengthIsRejectedAtOpen() throws {
+        // Same shape, carried by a local name length (33) that disagrees
+        // with the central directory's (1).
+        XCTAssertThrowsError(try ZipReader(url: try fixture("hostile-overlap-local-name"))) { error in
+            XCTAssertEqual(error as? ZipReaderError, .overlappingEntries)
+        }
+    }
+
+    func testLocalExtraFieldPushingDataPastEOFIsRejectedAtOpen() throws {
+        // The central directory is consistent with the file; only the local
+        // extra length (1000 bytes that are not there) is hostile. Rejection
+        // must happen at open, not as a truncated read mid-extraction.
+        XCTAssertThrowsError(try ZipReader(url: try fixture("hostile-extra-past-eof"))) { error in
+            guard case .corrupt = error as? ZipReaderError else {
+                return XCTFail("expected corrupt, got \(error)")
+            }
+        }
+    }
+
+    func testDataOffsetsAreResolvedFromTheLocalHeader() throws {
+        // Our own writer puts a 20-byte ZIP64 extra field in the local
+        // header when forced; the resolved offset must account for it and
+        // extraction must read from exactly there.
+        let url = workDir.appendingPathComponent("z64.zip")
+        let writer = try ZipWriter(url: url)
+        writer.zip64Threshold = 100
+        let payload = Data((0..<5000).map { UInt8($0 % 256) })
+        try writer.addFile("big.bin", data: payload)
+        try writer.finalize()
+        let reader = try ZipReader(url: url)
+        let entry = try XCTUnwrap(reader.entries.first)
+        XCTAssertEqual(entry.dataOffset, entry.localHeaderOffset + 30 + 7 + 20,
+                       "30-byte header + \"big.bin\" + ZIP64 extra (4 + 16)")
+        XCTAssertEqual(try reader.extractData(entry), payload)
+    }
+
     // MARK: - Malformed ZIP64 headers
     //
     // Both fixtures are shaped to make a reader compute an out-of-range file

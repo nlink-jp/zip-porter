@@ -92,6 +92,12 @@ public struct ZipEntry: Sendable {
     public var externalAttributes: UInt32
     public var versionMadeBy: UInt16
     public var encryption: Zip.Encryption
+    /// Absolute offset of the entry's payload, resolved from the *local*
+    /// header when the archive is opened (ADR-0005). The local header's name
+    /// and extra lengths may differ from the central directory's, and this
+    /// is the one place that difference is reconciled: the overlap/EOF check
+    /// and `extract` both read from here.
+    public var dataOffset: UInt64 = 0
 
     /// True when the entry is a directory (trailing slash — the convention
     /// every mainstream tool follows).
