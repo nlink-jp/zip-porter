@@ -218,11 +218,19 @@ public enum Unpacker {
         let base: URL
         var renames: [String: String] = [:]
         var topItems: [URL] = []
+        // What this extraction has actually created at the top level. Only
+        // an exclusive create appends here, and only the failure path reads
+        // it — the planned `topItems` are not what gets removed. A name
+        // another process takes between the uniqueness check and the create
+        // fails that create (`File exists`) and is left exactly as found
+        // (ADR-0005; the ADR-0001 "clean up only what it created" rule).
+        var owned = OwnedItems()
         if wrap {
             let stem = zipURL.deletingPathExtension().lastPathComponent
             let wrapper = PathUtil.uniqueURL(
                 destBase.appendingPathComponent(stem.isEmpty ? "Archive" : stem))
-            try FileManager.default.createDirectory(at: wrapper, withIntermediateDirectories: true)
+            try PathUtil.createDirectoryExclusively(at: wrapper)
+            owned.adopt(wrapper)
             root = wrapper
             base = wrapper
             topItems = [wrapper]
@@ -282,6 +290,19 @@ public enum Unpacker {
             }
         }
 
+        // Without a wrapper the top-level items sit directly in the
+        // destination, so each is claimed with an exclusive create the first
+        // time an entry needs it; everything beneath a claimed item is ours
+        // by construction. Inside a wrapper, the wrapper is the claim.
+        var claimedTops = Set<String>()
+        func claimTopLevelDirectory(_ top: String) throws {
+            guard !wrap, !claimedTops.contains(top) else { return }
+            let url = base.appendingPathComponent(top)
+            try PathUtil.createDirectoryExclusively(at: url)
+            owned.adopt(url)
+            claimedTops.insert(top)
+        }
+
         func extractAll() throws {
             for (entry, rawComponents) in work {
                 if shouldCancel?() == true { throw CancellationError() }
@@ -294,6 +315,10 @@ public enum Unpacker {
                     components[0] = renamed
                 }
                 let target = components.reduce(base) { $0.appendingPathComponent($1) }
+                let isTopLevelFile = !entry.isDirectory && components.count == 1
+                if !isTopLevelFile {
+                    try claimTopLevelDirectory(components[0])
+                }
 
                 if entry.isDirectory {
                     try FileManager.default.createDirectory(at: target, withIntermediateDirectories: true)
@@ -304,6 +329,12 @@ public enum Unpacker {
                         at: target.deletingLastPathComponent(), withIntermediateDirectories: true)
                     recordDirectories(components.dropLast())
                     let out = try PathUtil.createExclusively(at: target)
+                    if isTopLevelFile, !wrap {
+                        // O_EXCL succeeded: this file is ours, and it is a
+                        // top-level item in its own right.
+                        owned.adopt(target)
+                        claimedTops.insert(components[0])
+                    }
                     do {
                         try reader.extract(entry, password: options.password) { chunk in
                             try out.write(contentsOf: chunk)
@@ -349,12 +380,11 @@ public enum Unpacker {
                 applyQuarantine(to: url, named: path)
             }
         } catch {
-            // Never leave a half-written tree behind. Remove only the
-            // top-level items this call created — `root` can be the
-            // pre-existing destination directory under `.never`.
-            for item in topItems {
-                try? FileManager.default.removeItem(at: item)
-            }
+            // Never leave a half-written tree behind — and never touch
+            // anything this call did not create. The ledger holds only what
+            // an exclusive create returned; the planned names, and `root`
+            // (the pre-existing destination under `.never`), are not in it.
+            owned.removeAll()
             throw error
         }
 

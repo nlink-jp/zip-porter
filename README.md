@@ -154,6 +154,10 @@ extraction refuses malformed archives rather than trying to salvage them
 - **Duplicate names** — collisions (including case-only and NFC/NFD
   differences, which APFS treats as one name) are extracted under numbered
   names instead of silently overwriting each other
+- **Clean failure** — an extraction that fails part-way removes only the
+  items it created itself. Something that appeared at one of its names in
+  the meantime (another extraction, a download, a stale symlink) makes the
+  extraction fail rather than being reused or deleted
 - Integrity is verified for every entry: HMAC for AES, CRC-32 otherwise
 
 ### Performance

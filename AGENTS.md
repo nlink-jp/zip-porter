@@ -64,7 +64,8 @@ Tests/ZipPorterTests/       CLI routing/parsing, localization, main-menu, quit r
 scripts/                    vendored org templates + gen-fixtures.sh
 docs/{en,ja}/               RFP (design of record) + adr/ (0001 hardening,
                             0002 parallel compression, 0003 zlib parallel deflate,
-                            0004 batch completion) — mirrored en/ja
+                            0004 batch completion, 0005 review response: ownership
+                            ledger / local-header ranges / memory budget) — mirrored en/ja
 ```
 
 ## Project rules
@@ -83,7 +84,9 @@ docs/{en,ja}/               RFP (design of record) + adr/ (0001 hardening,
   superseding ADR): zip-slip guard in `Unpacker.sanitize`; symlinks skipped
   both directions; passwords via prompt only (never argv); passwordRequired
   and the space-budget check fire before any disk write; failed extractions
-  clean up only what they created; per-entry output is bounded by the
+  remove only what they created — recorded in an `OwnedItems` ledger when
+  the exclusive create returns, never derived from the planned names
+  (ADR-0005); per-entry output is bounded by the
   declared size (fail-fast); overlapping/past-EOF entry ranges are rejected
   at open; `com.apple.quarantine` propagates to every extracted item,
   **including directories created implicitly** on the way to a nested file
@@ -169,6 +172,17 @@ docs/{en,ja}/               RFP (design of record) + adr/ (0001 hardening,
   the archive and for every extracted file. `FileManager.createFile`
   truncates what it finds, which would make "never overwrite" only as
   strong as the gap after the existence check.
+- **`createDirectory(withIntermediateDirectories: true)` calls an existing
+  directory a success.** On a top-level path that would pour an extraction
+  into a folder some other process just made — and the failure cleanup
+  would then delete that folder (shipped that way through v0.11.2). The
+  top-level items (the wrapper; under `.never` each top-level file or
+  directory) are claimed with `PathUtil.createDirectoryExclusively`
+  (`mkdir(2)`: EEXIST on anything, dangling symlinks included) or `O_EXCL`,
+  and enter `OwnedItems` only on success; the failure path removes the
+  ledger's contents and cannot see the planned names. Directories *below*
+  an owned item may use the permissive call — they are ours by
+  construction.
 - **Never do arithmetic on header values inside a bounds check.** Offsets
   and sizes out of a ZIP64 record are attacker-chosen 64-bit values, so
   `offset + size <= fileSize` overflows while evaluating itself and

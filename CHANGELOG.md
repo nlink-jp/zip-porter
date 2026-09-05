@@ -1,5 +1,23 @@
 # Changelog
 
+## [Unreleased]
+
+### Fixed
+
+- **A failed extraction could delete files it did not create.** The
+  cleanup path removed every *planned* top-level path, so a file another
+  process created between the name check and the exclusive create — the
+  very file that made the create fail — was deleted, and a pre-existing
+  dangling symlink at that name met the same fate. Under the `never`
+  folder policy a folder another writer had just made was even extracted
+  into. Top-level items are now created exclusively (`mkdir(2)` /
+  `O_EXCL`) and recorded in an ownership ledger only when that create
+  succeeds; the failure path removes what the ledger holds and nothing
+  else. A name taken in that window now fails the extraction with `File
+  exists` instead
+  ([ADR-0005](docs/en/adr/0005-review-response-ownership-ranges-budget.md),
+  review finding ZP-01)
+
 ## [v0.11.2] - 2026-08-25
 
 ### Fixed

@@ -59,6 +59,31 @@ public enum PathUtil {
         return FileHandle(fileDescriptor: descriptor, closeOnDealloc: true)
     }
 
+    /// Create a directory, refusing to touch anything already at that path.
+    ///
+    /// `FileManager.createDirectory(withIntermediateDirectories: true)`
+    /// treats an existing directory as success, which would let an
+    /// extraction pour its entries into a folder some other process just
+    /// made — and then delete that folder on failure. `mkdir(2)` fails with
+    /// `EEXIST` on anything at the path, dangling symlinks included, so
+    /// success here means *this call* created the directory (ADR-0005).
+    /// `permissions` goes through the umask like any other `mkdir(2)`.
+    public static func createDirectoryExclusively(at url: URL,
+                                                  permissions: mode_t = 0o777) throws {
+        var failure: Int32 = 0
+        url.withUnsafeFileSystemRepresentation { path in
+            guard let path else { failure = EINVAL; return }
+            if mkdir(path, permissions) != 0 { failure = errno }
+        }
+        guard failure == 0 else {
+            throw NSError(domain: NSPOSIXErrorDomain, code: Int(failure), userInfo: [
+                NSFilePathErrorKey: url.path,
+                NSLocalizedDescriptionKey:
+                    "\(url.lastPathComponent): \(String(cString: strerror(failure)))",
+            ])
+        }
+    }
+
     /// Return `url` if nothing exists there, else the numbered variant.
     public static func uniqueURL(_ url: URL) -> URL {
         let dir = url.deletingLastPathComponent()
@@ -66,5 +91,26 @@ public enum PathUtil {
             FileManager.default.fileExists(atPath: dir.appendingPathComponent($0).path)
         }
         return dir.appendingPathComponent(name)
+    }
+}
+
+/// Filesystem items one operation has brought into existence, recorded only
+/// after the creating call returned success. A failure path removes what
+/// the ledger holds and nothing else — it has no view of what was *planned*
+/// — so a name another process took in the meantime is never deleted on
+/// its behalf (ADR-0005).
+struct OwnedItems {
+    private(set) var urls: [URL] = []
+
+    mutating func adopt(_ url: URL) {
+        urls.append(url)
+    }
+
+    /// Remove every owned item, most recent first. Best-effort: an item
+    /// that is already gone is not an error here.
+    func removeAll() {
+        for url in urls.reversed() {
+            try? FileManager.default.removeItem(at: url)
+        }
     }
 }
