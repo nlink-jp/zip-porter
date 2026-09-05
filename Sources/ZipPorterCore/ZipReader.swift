@@ -74,6 +74,24 @@ public final class ZipReader {
         let order = entries.indices
             .filter { !entries[$0].isDirectory }
             .sorted { entries[$0].localHeaderOffset < entries[$1].localHeaderOffset }
+        // Small entries' local headers sit a few hundred bytes apart, so
+        // they are read through a window: one 256 KiB read serves every
+        // header inside it, and a hundred thousand tiny entries cost a few
+        // hundred reads rather than a hundred thousand — a blink instead of
+        // minutes on a network volume. Large entries fall back to one read
+        // per header, but then there are few of them.
+        var window = Data()
+        var windowStart: UInt64 = 0
+        func localHeader(at start: UInt64) throws -> Data {
+            // `start + 30 <= fileSize` was checked by the caller.
+            if start < windowStart || start + 30 > windowStart + UInt64(window.count) {
+                windowStart = start
+                window = try read(at: start, count: Int(min(UInt64(Self.chunkSize), fileSize - start)))
+            }
+            let offset = window.startIndex + Int(start - windowStart)
+            return window.subdata(in: offset..<(offset + 30))
+        }
+
         var previousEnd: UInt64 = 0
         for (rank, index) in order.enumerated() {
             let entry = entries[index]
@@ -84,7 +102,7 @@ public final class ZipReader {
             guard start <= fileSize, fileSize - start >= 30 else {
                 throw ZipReaderError.corrupt("local header at \(start) past end of file")
             }
-            let lh = try read(at: start, count: 30)
+            let lh = try localHeader(at: start)
             guard try lh.readU32(at: 0) == Zip.localHeaderSignature else {
                 throw ZipReaderError.corrupt("local header at \(start)")
             }
