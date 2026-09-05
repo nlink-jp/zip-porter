@@ -1,9 +1,9 @@
 import XCTest
 @testable import ZipPorterCore
 
-/// ADR-0005 for the parallel compressor: class A (the scratch arena is owned
-/// by the compress call from creation to cleanUp, whatever fails) and class
-/// C (finished results share an aggregate memory budget). Write failures are
+/// ADR-0005 for the parallel compressor: class A (one scratch arena per pack,
+/// owned by the pack from creation to removal, whatever fails) and class C
+/// (finished results share an aggregate memory budget). Write failures are
 /// injected through `Limits.openScratch`; the real filesystem never fails on
 /// cue.
 final class ScratchLifecycleTests: XCTestCase {
@@ -23,7 +23,7 @@ final class ScratchLifecycleTests: XCTestCase {
 
     /// Small limits so the spill path runs on kilobytes, not megabytes.
     private func limits(spill: Int = 64 << 10,
-                        budget: Int = .max,
+                        budget: Int? = .max,
                         open: ((URL) throws -> ScratchFile)? = nil) -> ParallelCompressor.Limits {
         var limits = ParallelCompressor.Limits()
         limits.spillThreshold = spill
@@ -32,32 +32,8 @@ final class ScratchLifecycleTests: XCTestCase {
         return limits
     }
 
-    /// Incompressible bytes: deflate output ≈ input size.
-    private func noise(_ count: Int, seed: UInt64) -> Data {
-        var x = seed | 1
-        var data = Data(count: count)
-        data.withUnsafeMutableBytes { (raw: UnsafeMutableRawBufferPointer) in
-            for i in 0..<count {
-                x = x &* 6_364_136_223_846_793_005 &+ 1_442_695_040_888_963_407
-                raw[i] = UInt8(truncatingIfNeeded: x >> 33)
-            }
-        }
-        return data
-    }
-
-    /// Sixteen-symbol text: deflates to roughly half, so the probe says
-    /// "worth it" and the output stays below a 64 KiB threshold for inputs
-    /// under ~120 KiB.
-    private func symbols(_ count: Int, seed: UInt64) -> Data {
-        var x = seed | 1
-        var data = Data(count: count)
-        data.withUnsafeMutableBytes { (raw: UnsafeMutableRawBufferPointer) in
-            for i in 0..<count {
-                x = x &* 6_364_136_223_846_793_005 &+ 1_442_695_040_888_963_407
-                raw[i] = UInt8(ascii: "a") + UInt8(truncatingIfNeeded: (x >> 33) & 15)
-            }
-        }
-        return data
+    private func arena(_ limits: ParallelCompressor.Limits) -> ScratchArena {
+        ScratchArena(directory: workDir, openScratch: limits.openScratch)
     }
 
     private func input(_ name: String, _ data: Data) throws -> URL {
@@ -68,8 +44,8 @@ final class ScratchLifecycleTests: XCTestCase {
         return url
     }
 
-    private func scratchLeftovers() throws -> [String] {
-        try FileManager.default.contentsOfDirectory(atPath: workDir.path).filter { $0.contains("zp-scratch") }
+    private func leftovers() throws -> [String] {
+        try TestSupport.scratchLeftovers(in: workDir)
     }
 
     private func inflate(_ result: ParallelCompressor.Result) throws -> Data {
@@ -79,6 +55,14 @@ final class ScratchLifecycleTests: XCTestCase {
         var out = Data()
         try DeflateStream(.decompress).process(compressed, final: true) { out.append($0) }
         return out
+    }
+
+    /// Pack `dir` through the internal overload that takes limits.
+    private func pack(_ dir: URL, to name: String, limits: ParallelCompressor.Limits,
+                      options: Packer.Options = Packer.Options(),
+                      shouldCancel: (() -> Bool)? = nil) throws -> Packer.Result {
+        try Packer.pack(inputs: [dir], output: workDir.appendingPathComponent(name),
+                        options: options, limits: limits, progress: nil, shouldCancel: shouldCancel)
     }
 
     /// A real file on disk whose writes and/or close fail on cue.
@@ -116,89 +100,93 @@ final class ScratchLifecycleTests: XCTestCase {
         }
     }
 
-    // MARK: - Class A: one arena, owned from creation to cleanUp
+    /// Compressible inputs above the 64 KiB spill threshold once deflated.
+    private func spillingCorpus(_ count: Int, in dir: String = "src") throws -> URL {
+        for i in 0..<count {
+            _ = try input("\(dir)/t\(i).txt", TestSupport.symbols(300 << 10, seed: UInt64(100 + i)))
+        }
+        return workDir.appendingPathComponent(dir)
+    }
 
-    func testArenaIsCreatedOnFirstSpillHiddenAndRemovedByCleanUp() throws {
-        let small = try input("s.bin", noise(1000, seed: 1))
-        let quiet = try ParallelCompressor.compress([small], deflate: [true],
-                                                    scratchDirectory: workDir, limits: limits())
-        XCTAssertFalse(quiet.arena.exists, "nothing spilled, nothing created")
-        XCTAssertEqual(try scratchLeftovers(), [])
-        quiet.cleanUp()
+    // MARK: - Class A: one arena, owned by the pack from creation to removal
 
-        let big = try input("b.bin", noise(256 << 10, seed: 2))
-        let output = try ParallelCompressor.compress([big], deflate: [true],
-                                                     scratchDirectory: workDir, limits: limits())
-        XCTAssertTrue(output.arena.exists)
-        let names = try scratchLeftovers()
+    func testArenaIsCreatedOnFirstSpillHiddenAndRemovedByItsOwner() throws {
+        let quiet = arena(limits())
+        let small = try input("s.bin", TestSupport.noise(1000, seed: 1))
+        _ = try ParallelCompressor.compress([small], deflate: [true], arena: quiet, limits: limits())
+        XCTAssertEqual(try leftovers(), [], "nothing spilled, nothing created")
+        quiet.remove()
+
+        let busy = arena(limits())
+        let big = try input("b.bin", TestSupport.noise(256 << 10, seed: 2))
+        let results = try ParallelCompressor.compress([big], deflate: [true], arena: busy, limits: limits())
+        let names = try leftovers()
         XCTAssertEqual(names.count, 1, "one arena per pack: \(names)")
         XCTAssertTrue(names[0].hasPrefix("."), "hidden from Finder while it lives")
-        XCTAssertEqual(try inflate(try XCTUnwrap(output.results[0])), noise(256 << 10, seed: 2))
-        output.cleanUp()
-        XCTAssertEqual(try scratchLeftovers(), [])
-        output.cleanUp() // idempotent
+        XCTAssertEqual(try inflate(try XCTUnwrap(results[0])), TestSupport.noise(256 << 10, seed: 2))
+        busy.remove()
+        XCTAssertEqual(try leftovers(), [])
+        busy.remove() // idempotent
     }
 
-    func testArenaIsRemovedWhenItsFirstWriteFails() throws {
+    func testArenaCreationFailureIsReportedWithoutTheArenasName() throws {
+        // The user reads this message: a read-only destination must say so,
+        // not print a random hidden filename.
+        let denied = limits(open: { _ in throw NSError(domain: NSPOSIXErrorDomain, code: Int(EACCES)) })
+        let dir = try spillingCorpus(1)
+        XCTAssertThrowsError(try pack(dir, to: "out.zip", limits: denied)) { error in
+            guard case .ioError(let message) = error as? ZipWriterError else {
+                return XCTFail("expected ZipWriterError.ioError, got \(error)")
+            }
+            XCTAssertTrue(message.contains("Permission denied"), message)
+            XCTAssertFalse(message.contains("zp-scratch"), "internal file name leaked: \(message)")
+        }
+        XCTAssertEqual(try leftovers(), [])
+    }
+
+    func testPackRemovesTheArenaWhenItsFirstWriteFails() throws {
         // The write that fails is the one that would have made the file
         // known under the old per-entry design.
-        let url = try input("a.bin", noise(256 << 10, seed: 3))
-        XCTAssertThrowsError(try ParallelCompressor.compress(
-            [url], deflate: [true], scratchDirectory: workDir,
-            limits: limits(open: failing(afterWrites: 0))))
-        XCTAssertEqual(try scratchLeftovers(), [], "a half-written arena must not survive the failure")
+        let dir = try spillingCorpus(1)
+        XCTAssertThrowsError(try pack(dir, to: "out.zip", limits: limits(open: failing(afterWrites: 0))))
+        XCTAssertEqual(try leftovers(), [], "a half-written arena must not survive the failure")
     }
 
-    func testArenaIsRemovedWhenALaterWriteFails() throws {
-        let url = try input("a.bin", noise(1 << 20, seed: 4))
-        XCTAssertThrowsError(try ParallelCompressor.compress(
-            [url], deflate: [true], scratchDirectory: workDir,
-            limits: limits(open: failing(afterWrites: 2))))
-        XCTAssertEqual(try scratchLeftovers(), [])
+    func testPackRemovesTheArenaWhenALaterWriteFails() throws {
+        let dir = try spillingCorpus(1)
+        _ = try input("src/big.txt", TestSupport.symbols(2 << 20, seed: 7))
+        XCTAssertThrowsError(try pack(dir, to: "out.zip", limits: limits(open: failing(afterWrites: 2))))
+        XCTAssertEqual(try leftovers(), [])
     }
 
-    func testArenaIsRemovedEvenWhenItsCloseFails() throws {
-        let url = try input("a.bin", noise(256 << 10, seed: 5))
-        let output = try ParallelCompressor.compress(
-            [url], deflate: [true], scratchDirectory: workDir,
-            limits: limits(open: failing(afterWrites: .max, failClose: true)))
-        XCTAssertEqual(try scratchLeftovers().count, 1)
-        output.cleanUp()
-        XCTAssertEqual(try scratchLeftovers(), [], "a failing close must not keep the file alive")
+    func testPackRemovesTheArenaEvenWhenItsCloseFails() throws {
+        let dir = try spillingCorpus(1)
+        _ = try pack(dir, to: "out.zip", limits: limits(open: failing(afterWrites: .max, failClose: true)))
+        XCTAssertEqual(try leftovers(), [], "a failing close must not keep the file alive")
     }
 
-    func testArenaIsRemovedWhenBlockParallelCompressionFailsToWrite() throws {
-        let saved = ParallelCompressor.blockParallelThreshold
-        ParallelCompressor.blockParallelThreshold = 1 << 10
-        defer { ParallelCompressor.blockParallelThreshold = saved }
-        let url = try input("big.bin", noise(512 << 10, seed: 6))
-        XCTAssertThrowsError(try ParallelCompressor.compress(
-            [url], deflate: [true], scratchDirectory: workDir,
-            limits: limits(open: failing(afterWrites: 1))))
-        XCTAssertEqual(try scratchLeftovers(), [])
+    func testPackRemovesTheArenaWhenBlockParallelCompressionFailsToWrite() throws {
+        var limits = limits(open: failing(afterWrites: 1))
+        limits.blockParallelThreshold = 1 << 10
+        _ = try input("src/big.bin", TestSupport.symbols(600 << 10, seed: 6))
+        XCTAssertThrowsError(try pack(workDir.appendingPathComponent("src"), to: "out.zip", limits: limits))
+        XCTAssertEqual(try leftovers(), [])
     }
 
     func testOneFailingEntryTakesTheWholeArenaWithIt() throws {
         // Several entries have already spilled successfully when a later
         // one fails: the shared arena goes, not just the failing entry's part.
-        var urls: [URL] = []
-        for i in 0..<6 { urls.append(try input("n\(i).bin", noise(200 << 10, seed: UInt64(20 + i)))) }
-        XCTAssertThrowsError(try ParallelCompressor.compress(
-            urls, deflate: Array(repeating: true, count: urls.count),
-            scratchDirectory: workDir, limits: limits(open: failing(afterWrites: 3))))
-        XCTAssertEqual(try scratchLeftovers(), [])
+        let dir = try spillingCorpus(6)
+        XCTAssertThrowsError(try pack(dir, to: "out.zip", limits: limits(open: failing(afterWrites: 3))))
+        XCTAssertEqual(try leftovers(), [])
     }
 
-    func testPackRemovesTheArenaOnSuccessFailureAndCancellation() throws {
-        let dir = workDir.appendingPathComponent("src")
-        for i in 0..<4 { _ = try input("src/t\(i).txt", symbols(100 << 10, seed: UInt64(30 + i))) }
-        var options = Packer.Options()
-        options.clean = true
+    func testPackRemovesTheArenaOnSuccessAndCancellation() throws {
+        let dir = try spillingCorpus(4)
 
         // Success: everything forced to spill, arena gone, archive intact.
-        let ok = try Packer.pack(inputs: [dir], output: workDir.appendingPathComponent("ok.zip"),
-                                 options: options, limits: limits(budget: 0), progress: nil, shouldCancel: nil)
-        XCTAssertEqual(try scratchLeftovers(), [])
+        let ok = try pack(dir, to: "ok.zip", limits: limits(budget: 0))
+        XCTAssertEqual(try leftovers(), [])
         let reader = try ZipReader(url: ok.outputURL)
         XCTAssertEqual(reader.entries.filter { !$0.isDirectory }.count, 4)
         for entry in reader.entries where !entry.isDirectory {
@@ -209,20 +197,11 @@ final class ScratchLifecycleTests: XCTestCase {
 
         // Cancellation during the write phase: the arena belongs to the
         // pack and goes with the .part file.
-        var calls = 0
-        XCTAssertThrowsError(try Packer.pack(
-            inputs: [dir], output: workDir.appendingPathComponent("cancelled.zip"),
-            options: options, limits: limits(budget: 0), progress: nil,
-            shouldCancel: { calls += 1; return calls > 2 }))
-        XCTAssertEqual(try scratchLeftovers(), [])
+        let cancel = TestSupport.CancelAfter(2)
+        XCTAssertThrowsError(try pack(dir, to: "cancelled.zip", limits: limits(budget: 0),
+                                      shouldCancel: cancel.poll))
+        XCTAssertEqual(try leftovers(), [])
         XCTAssertFalse(FileManager.default.fileExists(atPath: workDir.appendingPathComponent("cancelled.zip").path))
-
-        // Failure inside compression.
-        XCTAssertThrowsError(try Packer.pack(
-            inputs: [dir], output: workDir.appendingPathComponent("failed.zip"),
-            options: options, limits: limits(budget: 0, open: failing(afterWrites: 1)),
-            progress: nil, shouldCancel: nil))
-        XCTAssertEqual(try scratchLeftovers(), [])
         XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: workDir.path)
                            .filter { $0.hasSuffix(".part") }, [])
     }
@@ -232,17 +211,18 @@ final class ScratchLifecycleTests: XCTestCase {
     func testRetainedCompressedOutputStaysWithinTheMemoryBudget() throws {
         // Eight results of ~32 KiB each, every one below the 64 KiB spill
         // threshold; a budget of 100 KiB admits three of them.
+        let limits = limits(budget: 100 << 10)
+        let shared = arena(limits)
+        defer { shared.remove() }
         var urls: [URL] = []
-        for i in 0..<8 { urls.append(try input("n\(i).bin", noise(32 << 10, seed: UInt64(40 + i)))) }
-        let output = try ParallelCompressor.compress(
-            urls, deflate: Array(repeating: true, count: urls.count),
-            scratchDirectory: workDir, limits: limits(budget: 100 << 10))
-        defer { output.cleanUp() }
+        for i in 0..<8 { urls.append(try input("n\(i).bin", TestSupport.noise(32 << 10, seed: UInt64(40 + i)))) }
+        let results = try ParallelCompressor.compress(
+            urls, deflate: Array(repeating: true, count: urls.count), arena: shared, limits: limits)
 
         var retained = 0
         var inMemory = 0
         var spilled = 0
-        for case .some(let result) in output.results {
+        for case .some(let result) in results {
             switch result.storage {
             case .memory(let data):
                 retained += data.count
@@ -256,6 +236,16 @@ final class ScratchLifecycleTests: XCTestCase {
         XCTAssertLessThanOrEqual(retained, 100 << 10, "finished results must not exceed the budget")
         XCTAssertEqual(inMemory, 3, "three ~32 KiB results fit a 100 KiB budget")
         XCTAssertEqual(spilled, 5)
+    }
+
+    func testMemoryBudgetDefaultsToCoresTimesSpillThreshold() {
+        let cores = max(ProcessInfo.processInfo.activeProcessorCount, 1)
+        XCTAssertEqual(ParallelCompressor.Limits().resolvedMemoryBudget, cores * (16 << 20))
+        var small = ParallelCompressor.Limits()
+        small.spillThreshold = 1000
+        XCTAssertEqual(small.resolvedMemoryBudget, cores * 1000, "the budget follows the threshold")
+        small.memoryBudget = 5
+        XCTAssertEqual(small.resolvedMemoryBudget, 5)
     }
 
     func testMemoryLedgerIsExactUnderConcurrentReservations() {
@@ -284,28 +274,20 @@ final class ScratchLifecycleTests: XCTestCase {
         // Determinism (ADR-0002) must not depend on the budget: the same
         // input packed with everything in memory and with everything
         // spilled is the same file, byte for byte.
+        for i in 0..<6 { _ = try input("src/t\(i).txt", TestSupport.symbols(96 << 10, seed: UInt64(50 + i))) }
         let dir = workDir.appendingPathComponent("src")
-        for i in 0..<6 { _ = try input("src/t\(i).txt", symbols(96 << 10, seed: UInt64(50 + i))) }
-        let inMemory = try Packer.pack(inputs: [dir], output: workDir.appendingPathComponent("m.zip"),
-                                       options: Packer.Options(), limits: limits(budget: .max),
-                                       progress: nil, shouldCancel: nil)
-        let spilled = try Packer.pack(inputs: [dir], output: workDir.appendingPathComponent("s.zip"),
-                                      options: Packer.Options(), limits: limits(budget: 0),
-                                      progress: nil, shouldCancel: nil)
+        let inMemory = try pack(dir, to: "m.zip", limits: limits(budget: .max))
+        let spilled = try pack(dir, to: "s.zip", limits: limits(budget: 0))
         XCTAssertEqual(try Data(contentsOf: inMemory.outputURL), try Data(contentsOf: spilled.outputURL))
-        XCTAssertEqual(try scratchLeftovers(), [])
+        XCTAssertEqual(try leftovers(), [])
     }
 
     func testForcedSpillsRoundTripThroughEncryption() throws {
         // Spilled results reach the encryptor in 256 KiB chunks, in-memory
         // ones in a single chunk; both ciphers must produce archives that
         // decrypt to the input.
-        let dir = workDir.appendingPathComponent("src")
-        let payloads = try (0..<3).map { i in
-            let data = symbols(300 << 10, seed: UInt64(60 + i))
-            _ = try input("src/e\(i).txt", data)
-            return data
-        }
+        let dir = try spillingCorpus(3)
+        let payloads = try (0..<3).map { try Data(contentsOf: dir.appendingPathComponent("t\($0).txt")) }
         let ciphers: [(ZipWriter.Encryption, String)] = [
             (.aes256(password: "pw-1"), "pw-1"),
             (.zipCrypto(password: "pw-2"), "pw-2"),
@@ -313,16 +295,14 @@ final class ScratchLifecycleTests: XCTestCase {
         for (encryption, password) in ciphers {
             var options = Packer.Options()
             options.encryption = encryption
-            let result = try Packer.pack(inputs: [dir], output: workDir.appendingPathComponent("enc.zip"),
-                                         options: options, limits: limits(budget: 0),
-                                         progress: nil, shouldCancel: nil)
+            let result = try pack(dir, to: "enc.zip", limits: limits(budget: 0), options: options)
             let reader = try ZipReader(url: result.outputURL)
             for (i, payload) in payloads.enumerated() {
-                let entry = try XCTUnwrap(reader.entries.first { reader.name(of: $0) == "src/e\(i).txt" })
+                let entry = try XCTUnwrap(reader.entries.first { reader.name(of: $0) == "src/t\(i).txt" })
                 XCTAssertEqual(try reader.extractData(entry, password: password), payload)
             }
             try FileManager.default.removeItem(at: result.outputURL)
         }
-        XCTAssertEqual(try scratchLeftovers(), [])
+        XCTAssertEqual(try leftovers(), [])
     }
 }

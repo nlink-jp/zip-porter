@@ -495,14 +495,157 @@ final class HardeningTests: XCTestCase {
     }
 
     func testFailureMidEntryRemovesThePartialFileThroughTheLedger() throws {
-        // The only remover is the ledger: a size-lying entry inside a
-        // wrapper leaves no wrapper, and inside a `.never` folder leaves no
-        // folder — the partial file goes with its owned top-level item.
-        let bomb = try fixture("hostile-size-lie")
-        var options = unpackOptions()
-        options.folderPolicy = .always
-        XCTAssertThrowsError(try Unpacker.unpack(zipURL: bomb, options: options))
-        XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: workDir.path), [])
+        // The only remover is the ledger, so a partial file must go with its
+        // owned top-level item under every folder policy: the wrapper, the
+        // adopted top-level file itself, or the claimed folder above it.
+        let bomb = try fixture("hostile-size-lie") // one top-level file, bomb.bin
+
+        var wrapped = unpackOptions()
+        wrapped.folderPolicy = .always
+        XCTAssertThrowsError(try Unpacker.unpack(zipURL: bomb, options: wrapped))
+        XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: workDir.path), [],
+                       "the wrapper and the partial file inside it must go")
+
+        var flat = unpackOptions()
+        flat.folderPolicy = .never
+        XCTAssertThrowsError(try Unpacker.unpack(zipURL: bomb, options: flat))
+        XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: workDir.path), [],
+                       "the adopted top-level file must go")
+
+        // Nested under `.never`: a second entry whose deflate stream is
+        // damaged fails mid-entry, after `d/` and `d/first.txt` were written.
+        let source = workDir.appendingPathComponent("nested.zip")
+        let writer = try ZipWriter(url: source)
+        try writer.addFile("d/first.txt", data: Data("first\n".utf8))
+        try writer.addFile("d/second.txt", data: Data(String(repeating: "second line of text\n", count: 100).utf8))
+        try writer.finalize()
+        let reader = try ZipReader(url: source)
+        let second = try XCTUnwrap(reader.entries.first { reader.name(of: $0) == "d/second.txt" })
+        let handle = try FileHandle(forUpdating: source)
+        try handle.seek(toOffset: second.dataOffset + 4)
+        try handle.write(contentsOf: Data([0xFF, 0x00, 0xFF, 0x00]))
+        try handle.close()
+        let dest = workDir.appendingPathComponent("dest")
+        try FileManager.default.createDirectory(at: dest, withIntermediateDirectories: true)
+        var nested = Unpacker.Options()
+        nested.destination = dest
+        nested.folderPolicy = .never
+        XCTAssertThrowsError(try Unpacker.unpack(zipURL: source, options: nested))
+        XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: dest.path), [],
+                       "the claimed folder, with the finished and the partial file, must go")
+    }
+
+    func testCaseVariantTopLevelFoldersAreKeptApartUnderNever() throws {
+        // A case-sensitive system can ship `Docs/` and `docs/`; on the
+        // default case-insensitive volume the second exclusive mkdir would
+        // hit the first. Top-level names are uniquified on the same folded
+        // key files use, so both land — side by side, nothing merged.
+        let source = workDir.appendingPathComponent("case.zip")
+        let writer = try ZipWriter(url: source)
+        try writer.addFile("Docs/a.txt", data: Data("A".utf8))
+        try writer.addFile("docs/b.txt", data: Data("B".utf8))
+        try writer.finalize()
+        let dest = workDir.appendingPathComponent("dest")
+        try FileManager.default.createDirectory(at: dest, withIntermediateDirectories: true)
+        var options = Unpacker.Options()
+        options.destination = dest
+        options.folderPolicy = .never
+
+        let result = try Unpacker.unpack(zipURL: source, options: options)
+        XCTAssertEqual(result.extractedFiles, 2)
+        XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: dest.path).sorted(),
+                       ["Docs", "docs 2"])
+        XCTAssertEqual(try Data(contentsOf: dest.appendingPathComponent("Docs/a.txt")), Data("A".utf8))
+        XCTAssertEqual(try Data(contentsOf: dest.appendingPathComponent("docs 2/b.txt")), Data("B".utf8))
+        XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: dest.appendingPathComponent("Docs").path),
+                       ["a.txt"], "nothing from docs/ may land in Docs/")
+    }
+
+    // MARK: - Local headers are read through right-sized windows (ADR-0005)
+
+    /// A stored archive built byte by byte, so entry sizes place the local
+    /// headers exactly where the test wants them.
+    private func storedArchive(_ entries: [(name: String, data: Data)]) -> Data {
+        var body = Data()
+        var central = Data()
+        for (name, payload) in entries {
+            let nameBytes = Data(name.utf8)
+            var crc = CRC32()
+            crc.update(payload)
+            let offset = UInt32(body.count)
+            var local = Data()
+            local.appendU32(Zip.localHeaderSignature)
+            local.appendU16(20)
+            local.appendU16(0)
+            local.appendU16(0) // store
+            local.appendU16(0)
+            local.appendU16(0)
+            local.appendU32(crc.value)
+            local.appendU32(UInt32(payload.count))
+            local.appendU32(UInt32(payload.count))
+            local.appendU16(UInt16(nameBytes.count))
+            local.appendU16(0)
+            local.append(nameBytes)
+            body.append(local)
+            body.append(payload)
+
+            var header = Data()
+            header.appendU32(Zip.centralHeaderSignature)
+            header.appendU16(20)
+            header.appendU16(20)
+            header.appendU16(0)
+            header.appendU16(0)
+            header.appendU16(0)
+            header.appendU16(0)
+            header.appendU32(crc.value)
+            header.appendU32(UInt32(payload.count))
+            header.appendU32(UInt32(payload.count))
+            header.appendU16(UInt16(nameBytes.count))
+            header.appendU16(0)
+            header.appendU16(0)
+            header.appendU16(0)
+            header.appendU16(0)
+            header.appendU32(0)
+            header.appendU32(offset)
+            header.append(nameBytes)
+            central.append(header)
+        }
+        var eocd = Data()
+        eocd.appendU32(Zip.eocdSignature)
+        eocd.appendU16(0)
+        eocd.appendU16(0)
+        eocd.appendU16(UInt16(entries.count))
+        eocd.appendU16(UInt16(entries.count))
+        eocd.appendU32(UInt32(central.count))
+        eocd.appendU32(UInt32(body.count))
+        eocd.appendU16(0)
+        return body + central + eocd
+    }
+
+    func testLocalHeadersAreReadThroughWindowsSizedToTheHeadersAhead() throws {
+        // 300 small entries (~40 KiB of archive) share one window, which
+        // also reaches the first big entry's header 40 KiB in; the two
+        // remaining 300 KiB entries lie farther apart than a window and cost
+        // one small read apiece — never a 256 KiB window each. Every offset
+        // must still be right.
+        var entries: [(name: String, data: Data)] = []
+        for i in 0..<300 {
+            entries.append(("s\(i)", TestSupport.symbols(100, seed: UInt64(1000 + i))))
+        }
+        for i in 0..<3 {
+            entries.append(("big\(i)", TestSupport.noise(300 << 10, seed: UInt64(2000 + i))))
+        }
+        let url = workDir.appendingPathComponent("windows.zip")
+        try storedArchive(entries).write(to: url)
+
+        let reader = try ZipReader(url: url)
+        XCTAssertEqual(reader.entries.count, 303)
+        XCTAssertEqual(reader.localHeaderReads, 3,
+                       "one window for the dense run plus the first big header, one read per remaining sparse header")
+        for (entry, (name, data)) in zip(reader.entries, entries) {
+            XCTAssertEqual(entry.dataOffset, entry.localHeaderOffset + 30 + UInt64(name.utf8.count), name)
+            XCTAssertEqual(try reader.extractData(entry), data, name)
+        }
     }
 
     func testSuccessfulExtractionStillReportsEveryTopLevelItem() throws {

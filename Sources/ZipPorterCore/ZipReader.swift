@@ -30,6 +30,9 @@ public final class ZipReader {
     public private(set) var entries: [ZipEntry] = []
     /// Encoding decided for entries that lack the UTF-8 flag.
     public private(set) var detectedEncoding: NameEncoding = .utf8
+    /// Window reads `resolveEntryRanges` issued — observable so a test can
+    /// pin that opening stays cheap (ADR-0005).
+    private(set) var localHeaderReads = 0
 
     public init(url: URL) throws {
         file = try FileHandle(forReadingFrom: url)
@@ -74,19 +77,35 @@ public final class ZipReader {
         let order = entries.indices
             .filter { !entries[$0].isDirectory }
             .sorted { entries[$0].localHeaderOffset < entries[$1].localHeaderOffset }
-        // Small entries' local headers sit a few hundred bytes apart, so
-        // they are read through a window: one 256 KiB read serves every
-        // header inside it, and a hundred thousand tiny entries cost a few
-        // hundred reads rather than a hundred thousand — a blink instead of
-        // minutes on a network volume. Large entries fall back to one read
-        // per header, but then there are few of them.
+        // Headers are read through a window sized to the headers ahead: as
+        // many upcoming ones as fit in `chunkSize` from this one, and just
+        // this one when the next lies farther away. Small entries sit a few
+        // hundred bytes apart, so a hundred thousand of them cost a few
+        // hundred reads rather than a hundred thousand; large entries cost
+        // one 30-byte read each, never a 256 KiB window per entry (an
+        // archive of 10 000 photos would otherwise read 2.5 GiB to open).
         var window = Data()
         var windowStart: UInt64 = 0
-        func localHeader(at start: UInt64) throws -> Data {
+        var windowEnd: UInt64 = 0
+        func localHeader(rank: Int) throws -> Data {
+            let start = entries[order[rank]].localHeaderOffset
             // `start + 30 <= fileSize` was checked by the caller.
-            if start < windowStart || start + 30 > windowStart + UInt64(window.count) {
+            if start < windowStart || start + 30 > windowEnd {
+                var end = start + 30
+                var ahead = rank + 1
+                while ahead < order.count {
+                    let next = entries[order[ahead]].localHeaderOffset
+                    guard next <= fileSize, fileSize - next >= 30,
+                          next + 30 <= start + UInt64(Self.chunkSize) else { break }
+                    end = max(end, next + 30)
+                    ahead += 1
+                }
                 windowStart = start
-                window = try read(at: start, count: Int(min(UInt64(Self.chunkSize), fileSize - start)))
+                windowEnd = end
+                // The previous window is bridged NSData; without a pool it
+                // would stay resident until the whole resolve finished.
+                window = try autoreleasepool { try read(at: start, count: Int(end - start)) }
+                localHeaderReads += 1
             }
             let offset = window.startIndex + Int(start - windowStart)
             return window.subdata(in: offset..<(offset + 30))
@@ -102,7 +121,7 @@ public final class ZipReader {
             guard start <= fileSize, fileSize - start >= 30 else {
                 throw ZipReaderError.corrupt("local header at \(start) past end of file")
             }
-            let lh = try localHeader(at: start)
+            let lh = try localHeader(rank: rank)
             guard try lh.readU32(at: 0) == Zip.localHeaderSignature else {
                 throw ZipReaderError.corrupt("local header at \(start)")
             }

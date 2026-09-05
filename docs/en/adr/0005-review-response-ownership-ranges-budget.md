@@ -94,7 +94,12 @@ fails safely. *After review:* the uniqueness check (`PathUtil.uniqueName`,
 (`PathUtil.somethingExists`), because `fileExists(atPath:)` follows
 symlinks and reports a dangling one as absent — the check would pick a
 name the exclusive create then fails on, deterministically. The entry now
-lands on "name 2" and the link is untouched.
+lands on "name 2" and the link is untouched. Top-level names are also
+uniquified against each other on the folded key files already use (NFC +
+case), so `Docs/` and `docs/` from a case-sensitive system become `Docs`
+and `docs 2` rather than meeting in one exclusive `mkdir` on the default
+case-insensitive volume — the one case the implementation review found
+where the claim was stricter than the old permissive create.
 
 **Compression scratch.** *After review*, replacing the draft's per-entry
 scratch files with defer-based release: one `ScratchArena` per `compress`
@@ -104,11 +109,14 @@ recorded under the same lock in the same step, so there is no moment at
 which the file exists unowned. Workers append under the lock and receive
 byte ranges; a result's storage is `.memory(Data)` or
 `.arena(ScratchArena, [Range<UInt64>])`, and the writer reads the ranges
-back. The arena has one owner: `compress` removes it on any failure, and
-the `Output` it returns hands it to `Packer`, whose single `defer` calls
-`cleanUp()`. There is no per-entry lifecycle left to get right on every
-exit path — the shape of ZP-03 cannot recur — and the memory budget (C)
-cannot litter the user's folder with thousands of scratch files.
+back through one shared descriptor. The arena has one owner: `Packer`,
+which already owns the scratch directory and the `.part` file, creates it
+and removes it with one `defer`; `compress` receives it as a parameter and
+owns nothing on disk. There is no per-entry lifecycle left to get right on
+every exit path — the shape of ZP-03 cannot recur — and the memory budget
+(C) cannot litter the user's folder with thousands of scratch files. When
+the arena cannot be created (a read-only destination) the error names the
+cause, not the hidden random file.
 
 *After review:* the compressor's knobs — spill threshold, memory budget,
 and the scratch opener — travel in `ParallelCompressor.Limits`, passed
@@ -132,11 +140,13 @@ crashes. An extra field or name length that pushes the payload past EOF
 is rejected at open rather than during extraction.
 
 *After review:* entries are visited in offset order and the headers are
-served from a 256 KiB window, so a hundred thousand small entries cost a
-few hundred reads rather than one each — the difference between a blink
-and minutes on a network volume. Large entries fall back to one read per
-header, but then there are few of them. Measured: a 100 000-entry archive
-(10.8 MB) opens and lists in 0.4 s locally.
+served from a window sized to the headers ahead — as many upcoming ones as
+fit in 256 KiB, or just this one when the next lies farther away — so a
+hundred thousand small entries cost a few hundred reads rather than one
+each, and large entries cost one 30-byte read apiece rather than a 256 KiB
+window each (a first cut read the full window every time: 10 000 photos
+would have read 2.5 GiB to open). Measured: a 100 000-entry archive
+(10.8 MB) opens and lists in 0.4 s locally; a test pins the read count.
 
 ### C. Retained compressed output has an aggregate budget
 

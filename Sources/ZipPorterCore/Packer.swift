@@ -43,7 +43,7 @@ public enum Packer {
                             options: Options = Options(),
                             progress: ((OperationProgress) -> Void)? = nil,
                             shouldCancel: (() -> Bool)? = nil) throws -> Result {
-        try pack(inputs: inputs, output: output, options: options, limits: .default,
+        try pack(inputs: inputs, output: output, options: options, limits: ParallelCompressor.Limits(),
                  progress: progress, shouldCancel: shouldCancel)
     }
 
@@ -163,21 +163,22 @@ public enum Packer {
             !ZipWriter.storeExtensions.contains((item.archivePath as NSString).pathExtension.lowercased())
                 && ParallelCompressor.isWorthDeflating(item.url)
         }
-        var compressed: ParallelCompressor.Output?
+        // The scratch arena spilled results live in belongs to this pack:
+        // created here, beside the archive, and removed by this one defer
+        // whatever happens below (ADR-0005). It touches the disk only when
+        // something actually spills.
+        let arena = ScratchArena(directory: actualOutput.deletingLastPathComponent(),
+                                 openScratch: limits.openScratch)
+        defer { arena.remove() }
+        var precompressed: [Int: ParallelCompressor.Result] = [:]
         if deflatable.contains(true) {
-            compressed = try ParallelCompressor.compress(
+            let results = try ParallelCompressor.compress(
                 fileItems.map(\.element.url),
                 deflate: deflatable,
-                scratchDirectory: actualOutput.deletingLastPathComponent(),
+                arena: arena,
                 limits: limits,
                 onBytes: { report(nil, adding: $0) },
                 shouldCancel: shouldCancel)
-        }
-        // The scratch arena the spilled results live in belongs to this
-        // pack from here on; one release, whatever happens below.
-        defer { compressed?.cleanUp() }
-        var precompressed: [Int: ParallelCompressor.Result] = [:]
-        if let results = compressed?.results {
             for (slot, (index, _)) in fileItems.enumerated() where slot < results.count {
                 if let result = results[slot] { precompressed[index] = result }
             }

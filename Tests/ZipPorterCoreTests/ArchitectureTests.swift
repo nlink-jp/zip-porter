@@ -62,8 +62,8 @@ final class ArchitectureTests: XCTestCase {
         XCTAssertEqual(occurrences(of: "openScratch(", in: compressor), 1, "the arena opens its file once")
         XCTAssertEqual(occurrences(of: "createExclusively(", in: compressor), 1, "the default opener")
         XCTAssertEqual(occurrences(of: "removeItem(", in: compressor), 1, "ScratchArena.remove is the only remover")
-        XCTAssertEqual(occurrences(of: "static var", in: compressor), 2,
-                       "knobs travel in Limits; only blockParallelThreshold and Limits.default remain static")
+        XCTAssertEqual(occurrences(of: "static var", in: compressor), 0,
+                       "knobs travel in Limits, passed per call — no process-wide state for tests to mutate")
     }
 
     // MARK: - Class B: one derivation of the entry data offset

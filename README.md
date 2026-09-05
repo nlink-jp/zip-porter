@@ -157,9 +157,10 @@ extraction refuses malformed archives rather than trying to salvage them
   differences, which APFS treats as one name) are extracted under numbered
   names instead of silently overwriting each other
 - **Clean failure** — an extraction that fails part-way removes only the
-  items it created itself. Something that appeared at one of its names in
-  the meantime (another extraction, a download, a stale symlink) makes the
-  extraction fail rather than being reused or deleted
+  items it created itself. Something that appears at one of its names
+  while it runs (another extraction, a download) makes the extraction fail
+  rather than being reused or deleted; anything already there when it
+  starts — a stale symlink included — just moves it to "name 2"
 - Integrity is verified for every entry: HMAC for AES, CRC-32 otherwise
 
 ### Performance

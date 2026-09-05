@@ -1,3 +1,4 @@
+import Darwin
 import Foundation
 
 /// Compresses entries concurrently so packing uses every core, while the
@@ -29,66 +30,48 @@ enum ParallelCompressor {
                     return data
                 }
             case .arena(let arena, let ranges):
-                let reader = try arena.openForReading()
-                var pending = ranges[...]
-                var consumed: UInt64 = 0
-                return {
-                    while let range = pending.first {
-                        let from = range.lowerBound + consumed
-                        if from >= range.upperBound {
-                            pending.removeFirst()
-                            consumed = 0
-                            continue
-                        }
-                        let count = Int(min(UInt64(chunkSize), range.upperBound - from))
-                        let chunk = try reader.read(at: from, count: count)
-                        consumed += UInt64(chunk.count)
-                        return chunk
+                // Split into chunk-sized reads up front so the iterator
+                // carries no cursor state.
+                var chunks = ranges.flatMap { range in
+                    stride(from: range.lowerBound, to: range.upperBound, by: chunkSize).map {
+                        $0..<min($0 + UInt64(chunkSize), range.upperBound)
                     }
-                    try reader.close()
-                    return nil
+                }[...]
+                return {
+                    guard let next = chunks.popFirst() else { return nil }
+                    return try arena.read(at: next.lowerBound,
+                                          count: Int(next.upperBound - next.lowerBound))
                 }
             }
         }
     }
 
-    /// What `compress` hands back: one result per input, and the arena the
-    /// spilled ones reference. The caller owns the output from the return
-    /// until `cleanUp()`; nothing else removes the arena (ADR-0005).
-    struct Output {
-        var results: [Result?]
-        let arena: ScratchArena
-
-        func cleanUp() {
-            arena.remove()
-        }
-    }
-
-    /// The knobs one `compress` call runs under. Production passes the
-    /// defaults; tests pass small values and a failing scratch opener
-    /// instead of mutating process-wide state.
+    /// The knobs one `compress` call runs under, passed per call: production
+    /// uses the defaults, tests pass small values and a failing scratch
+    /// opener instead of mutating process-wide state (ADR-0005).
     struct Limits {
         /// Compressed output above this size goes to the arena while the
         /// entry is being compressed, so what any one worker holds is bounded.
         var spillThreshold = 16 << 20
-        /// Aggregate ceiling on finished results kept in memory (ADR-0005).
-        /// The per-entry threshold bounds the workers; this bounds what they
-        /// hand back, so a folder of ten thousand small files does not
-        /// accumulate its whole compressed size in RAM before the write
-        /// phase starts. `cores × spillThreshold` — the bound ADR-0002 states.
-        var memoryBudget = max(ProcessInfo.processInfo.activeProcessorCount, 1) * (16 << 20)
+        /// Aggregate ceiling on finished results kept in memory; nil means
+        /// `cores × spillThreshold`, the bound ADR-0002 states. The per-entry
+        /// threshold bounds the workers; this bounds what they hand back, so
+        /// a folder of ten thousand small files does not accumulate its whole
+        /// compressed size in RAM before the write phase starts.
+        var memoryBudget: Int?
+        /// Files at least this large compress as independent blocks in
+        /// bounded waves (ADR-0003).
+        var blockParallelThreshold: UInt64 = 32 << 20
         /// Opens the arena file: an exclusive create under a random hidden
-        /// name. Injectable because no real filesystem fails a write on cue,
-        /// and the arena's lifecycle cannot be tested otherwise.
+        /// name. Injectable because no real filesystem fails a write on cue.
         var openScratch: (URL) throws -> ScratchFile = { try PathUtil.createExclusively(at: $0) }
 
-        static var `default`: Limits { Limits() }
+        var resolvedMemoryBudget: Int {
+            memoryBudget ?? max(ProcessInfo.processInfo.activeProcessorCount, 1) * spillThreshold
+        }
     }
 
     static let chunkSize = 256 << 10
-    /// Files at least this large compress as independent blocks in bounded
-    /// waves (ADR-0003). Internal so tests can force the path with small data.
-    static var blockParallelThreshold: UInt64 = 32 << 20
     /// Block granularity of the pigz-style join; ~16 MB costs no measurable
     /// ratio versus one stream.
     static let blockSize = 16 << 20
@@ -116,19 +99,19 @@ enum ParallelCompressor {
 
     /// Compress `urls` concurrently. Returns one result per input index, or
     /// nil for entries the caller should stream itself (stored entries, and
-    /// anything skipped by cancellation). Throws the first failure seen —
-    /// and removes the arena before doing so; on success the arena belongs
-    /// to the returned `Output` until `cleanUp()`.
+    /// anything skipped by cancellation). Throws the first failure seen.
+    /// Spilled results live in `arena`, which the caller owns: it created
+    /// it and removes it on every exit path. Nothing here owns anything on
+    /// disk (ADR-0005).
     static func compress(_ urls: [URL],
                          deflate: [Bool],
-                         scratchDirectory: URL,
-                         limits: Limits = .default,
+                         arena: ScratchArena,
+                         limits: Limits = Limits(),
                          onBytes: ((UInt64) -> Void)? = nil,
-                         shouldCancel: (() -> Bool)? = nil) throws -> Output {
+                         shouldCancel: (() -> Bool)? = nil) throws -> [Result?] {
         precondition(urls.count == deflate.count)
-        let arena = ScratchArena(directory: scratchDirectory, limits: limits)
         var results = [Result?](repeating: nil, count: urls.count)
-        guard !urls.isEmpty else { return Output(results: results, arena: arena) }
+        guard !urls.isEmpty else { return results }
 
         // Large files get the block-parallel path one at a time; the rest
         // run whole-file, one per core (ADR-0002/0003).
@@ -137,7 +120,7 @@ enum ParallelCompressor {
         for (index, url) in urls.enumerated() where deflate[index] {
             let size = (try? FileManager.default.attributesOfItem(atPath: url.path)[.size]
                 as? NSNumber)?.uint64Value ?? 0
-            if size >= blockParallelThreshold {
+            if size >= limits.blockParallelThreshold {
                 largeIndexes.append(index)
             } else {
                 smallIndexes.append(index)
@@ -147,43 +130,38 @@ enum ParallelCompressor {
         // concurrentPerform sizes itself to the machine's cores, so the
         // in-flight buffers are bounded by cores × spillThreshold; the ledger
         // bounds what the finished results retain (ADR-0005).
-        let ledger = MemoryLedger(budget: limits.memoryBudget)
+        let ledger = MemoryLedger(budget: limits.resolvedMemoryBudget)
+        func sink() -> SpillSink {
+            SpillSink(arena: arena, spillThreshold: limits.spillThreshold, ledger: ledger)
+        }
         let lock = NSLock()
         var failure: Error?
-        do {
-            DispatchQueue.concurrentPerform(iterations: smallIndexes.count) { slot in
-                let index = smallIndexes[slot]
+        DispatchQueue.concurrentPerform(iterations: smallIndexes.count) { slot in
+            let index = smallIndexes[slot]
+            lock.lock()
+            let alreadyFailed = failure != nil
+            lock.unlock()
+            if alreadyFailed || shouldCancel?() == true { return }
+
+            do {
+                let result = try compressOne(urls[index], sink: sink(), onBytes: onBytes)
                 lock.lock()
-                let alreadyFailed = failure != nil
+                results[index] = result
                 lock.unlock()
-                if alreadyFailed || shouldCancel?() == true { return }
-
-                do {
-                    let result = try compressOne(urls[index], arena: arena, limits: limits,
-                                                 ledger: ledger, onBytes: onBytes)
-                    lock.lock()
-                    results[index] = result
-                    lock.unlock()
-                } catch {
-                    lock.lock()
-                    if failure == nil { failure = error }
-                    lock.unlock()
-                }
+            } catch {
+                lock.lock()
+                if failure == nil { failure = error }
+                lock.unlock()
             }
-            if let failure { throw failure }
-
-            for index in largeIndexes {
-                if shouldCancel?() == true { break }
-                results[index] = try compressLarge(urls[index], arena: arena, limits: limits,
-                                                   ledger: ledger, onBytes: onBytes,
-                                                   shouldCancel: shouldCancel)
-            }
-        } catch {
-            // The one owner of the arena while compression runs.
-            arena.remove()
-            throw error
         }
-        return Output(results: results, arena: arena)
+        if let failure { throw failure }
+
+        for index in largeIndexes {
+            if shouldCancel?() == true { break }
+            results[index] = try compressLarge(urls[index], sink: sink(),
+                                               onBytes: onBytes, shouldCancel: shouldCancel)
+        }
+        return results
     }
 
     /// Block-parallel compression of one large file (ADR-0003): read up to
@@ -192,14 +170,12 @@ enum ParallelCompressor {
     /// block closes the stream, so no EOF lookahead is needed. Peak memory
     /// is about cores × 2 × blockSize regardless of file size.
     private static func compressLarge(_ url: URL,
-                                      arena: ScratchArena,
-                                      limits: Limits,
-                                      ledger: MemoryLedger,
+                                      sink: SpillSink,
                                       onBytes: ((UInt64) -> Void)?,
                                       shouldCancel: (() -> Bool)?) throws -> Result {
         let input = try FileHandle(forReadingFrom: url)
         defer { try? input.close() }
-        var sink = SpillSink(arena: arena, limits: limits, ledger: ledger)
+        var sink = sink
         var crc: UInt32 = 0
         var uncompressed: UInt64 = 0
         let cores = max(ProcessInfo.processInfo.activeProcessorCount, 1)
@@ -243,16 +219,14 @@ enum ParallelCompressor {
     }
 
     private static func compressOne(_ url: URL,
-                                    arena: ScratchArena,
-                                    limits: Limits,
-                                    ledger: MemoryLedger,
+                                    sink: SpillSink,
                                     onBytes: ((UInt64) -> Void)?) throws -> Result {
         let input = try FileHandle(forReadingFrom: url)
         defer { try? input.close() }
+        var sink = sink
         let deflater = try ZlibDeflateStream()
         var crc: UInt32 = 0
         var uncompressed: UInt64 = 0
-        var sink = SpillSink(arena: arena, limits: limits, ledger: ledger)
 
         while let chunk = try input.read(upToCount: chunkSize), !chunk.isEmpty {
             crc = ZlibDeflate.crc32(crc, chunk)
@@ -268,49 +242,52 @@ enum ParallelCompressor {
     /// Where one entry's compressed bytes go while it is being compressed:
     /// memory up to the spill threshold, then the shared arena, staged in
     /// `chunkSize` pieces so small deflate outputs do not become one append
-    /// each. The sink owns nothing on disk — the arena does — so a failure
-    /// anywhere in the entry needs no bookkeeping here (ADR-0005).
+    /// each. Once `ranges` is non-empty the entry has committed to the
+    /// arena. The sink owns nothing on disk — the arena's owner does — so a
+    /// failure anywhere in the entry needs no bookkeeping here (ADR-0005).
     private struct SpillSink {
         let arena: ScratchArena
-        let limits: Limits
+        let spillThreshold: Int
         let ledger: MemoryLedger
         private var buffer = Data()
         private var ranges: [Range<UInt64>] = []
-        private var spilled = false
 
-        init(arena: ScratchArena, limits: Limits, ledger: MemoryLedger) {
+        init(arena: ScratchArena, spillThreshold: Int, ledger: MemoryLedger) {
             self.arena = arena
-            self.limits = limits
+            self.spillThreshold = spillThreshold
             self.ledger = ledger
         }
 
         mutating func emit(_ chunk: Data) throws {
             buffer.append(chunk)
-            if spilled {
-                if buffer.count >= ParallelCompressor.chunkSize { try flush() }
-            } else if buffer.count > limits.spillThreshold {
-                spilled = true
+            if ranges.isEmpty {
+                if buffer.count > spillThreshold { try flush() }
+            } else if buffer.count >= ParallelCompressor.chunkSize {
                 try flush()
             }
         }
 
         private mutating func flush() throws {
             guard !buffer.isEmpty else { return }
+            let first = ranges.isEmpty
             ranges.append(try arena.append(buffer))
-            buffer.removeAll(keepingCapacity: true)
+            if first {
+                // Drop the ≥ threshold backing store; staging from here on
+                // needs a chunk's worth.
+                buffer = Data()
+            } else {
+                buffer.removeAll(keepingCapacity: true)
+            }
         }
 
         /// Hand the compressed bytes over. A result small enough to stay in
         /// memory still spills when the aggregate budget is spent.
         mutating func finish() throws -> Result.Storage {
-            if !spilled, !ledger.reserve(buffer.count) {
-                spilled = true
+            if ranges.isEmpty, ledger.reserve(buffer.count) {
+                return .memory(buffer)
             }
-            if spilled {
-                try flush()
-                return .arena(arena, ranges)
-            }
-            return .memory(buffer)
+            try flush()
+            return .arena(arena, ranges)
         }
     }
 }
@@ -324,40 +301,53 @@ protocol ScratchFile: AnyObject {
 
 extension FileHandle: ScratchFile {}
 
-/// The single scratch file behind one `compress` call (ADR-0005): created
-/// on the first spill — exclusively, under a hidden random name beside the
-/// archive — owned by the call, and removed by `cleanUp` on every exit
-/// path. Workers append under a lock and receive byte ranges back. One
-/// file with one lifecycle, whatever the input count: no per-entry scratch
-/// files to track on every failure branch, and nothing to litter the
-/// user's folder with when the memory budget sends thousands of small
-/// results to disk.
+/// The single scratch file behind one pack (ADR-0005): created on the first
+/// spill — exclusively, under a hidden random name beside the archive —
+/// owned by whoever constructed it (the `Packer`, whose one `defer` removes
+/// it on every exit path), appended to by the compression workers under a
+/// lock, and read back by the writer through one descriptor. One file with
+/// one lifecycle, whatever the input count: no per-entry scratch files to
+/// track on every failure branch, and nothing to litter the user's folder
+/// with when the memory budget sends thousands of small results to disk.
 final class ScratchArena {
-    let url: URL
-    private let limits: ParallelCompressor.Limits
-    private let lock = NSLock()
-    private var file: ScratchFile?
-    private var end: UInt64 = 0
-    private var removed = false
+    /// The arena is hidden while it lives; tests filter leftovers on this.
+    static let namePrefix = ".zp-scratch-"
 
-    init(directory: URL, limits: ParallelCompressor.Limits) {
-        url = directory.appendingPathComponent(".zp-scratch-\(UUID().uuidString)")
-        self.limits = limits
+    let url: URL
+    private let openScratch: (URL) throws -> ScratchFile
+    private let lock = NSLock()
+    private var writer: ScratchFile?
+    private var reader: FileHandle?
+    private var created = false
+    private var removed = false
+    private var end: UInt64 = 0
+
+    init(directory: URL, openScratch: @escaping (URL) throws -> ScratchFile) {
+        url = directory.appendingPathComponent(Self.namePrefix + UUID().uuidString)
+        self.openScratch = openScratch
     }
 
     /// Append `data`, returning where it landed. Creates the file on first
-    /// use; the handle is recorded under the lock in the same step, so
-    /// there is no moment at which the file exists unowned.
+    /// use; the handle is recorded under the lock in the same step, so there
+    /// is no moment at which the file exists unowned.
     func append(_ data: Data) throws -> Range<UInt64> {
         lock.lock()
         defer { lock.unlock() }
         precondition(!removed, "append to a removed arena")
         let handle: ScratchFile
-        if let open = file {
+        if let open = writer {
             handle = open
         } else {
-            handle = try limits.openScratch(url)
-            file = handle
+            do {
+                handle = try openScratch(url)
+            } catch {
+                // The user reads this; the arena's random name would tell
+                // them nothing.
+                throw ZipWriterError.ioError(
+                    "cannot create a scratch file beside the archive: \(PathUtil.reason(of: error))")
+            }
+            writer = handle
+            created = true
         }
         try handle.write(contentsOf: data)
         let range = end..<(end + UInt64(data.count))
@@ -365,22 +355,34 @@ final class ScratchArena {
         return range
     }
 
-    /// Bytes written so far (the arena file's size).
-    var length: UInt64 {
+    /// Positioned read for the write phase, through one descriptor opened on
+    /// first use — the write phase is sequential, and one open per pack beats
+    /// one per spilled entry (thousands, once the budget is spent).
+    func read(at offset: UInt64, count: Int) throws -> Data {
         lock.lock()
         defer { lock.unlock() }
-        return end
-    }
-
-    /// True once at least one result has spilled into the file.
-    var exists: Bool {
-        lock.lock()
-        defer { lock.unlock() }
-        return file != nil
-    }
-
-    func openForReading() throws -> ArenaReader {
-        try ArenaReader(url: url)
+        precondition(!removed, "read from a removed arena")
+        guard count > 0 else { return Data() }
+        let handle: FileHandle
+        if let open = reader {
+            handle = open
+        } else {
+            handle = try FileHandle(forReadingFrom: url)
+            reader = handle
+        }
+        var data = Data(count: count)
+        var done = 0
+        try data.withUnsafeMutableBytes { (raw: UnsafeMutableRawBufferPointer) in
+            while done < count {
+                let got = pread(handle.fileDescriptor, raw.baseAddress! + done,
+                                count - done, off_t(offset) + off_t(done))
+                guard got > 0 else {
+                    throw ZipWriterError.ioError("scratch arena truncated at \(offset + UInt64(done))")
+                }
+                done += Int(got)
+            }
+        }
+        return data
     }
 
     /// Close and delete the file if it was ever created. Idempotent.
@@ -389,31 +391,13 @@ final class ScratchArena {
         defer { lock.unlock() }
         guard !removed else { return }
         removed = true
-        guard let open = file else { return }
-        try? open.close()
-        file = nil
-        try? FileManager.default.removeItem(at: url)
-    }
-}
-
-/// Read side of the arena, one per `open()` of a result.
-final class ArenaReader {
-    private let handle: FileHandle
-
-    init(url: URL) throws {
-        handle = try FileHandle(forReadingFrom: url)
-    }
-
-    func read(at offset: UInt64, count: Int) throws -> Data {
-        try handle.seek(toOffset: offset)
-        guard let data = try handle.read(upToCount: count), data.count == count else {
-            throw ZipWriterError.ioError("scratch arena truncated")
+        try? writer?.close()
+        writer = nil
+        try? reader?.close()
+        reader = nil
+        if created {
+            try? FileManager.default.removeItem(at: url)
         }
-        return data
-    }
-
-    func close() throws {
-        try handle.close()
     }
 }
 

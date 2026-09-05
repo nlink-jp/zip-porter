@@ -150,6 +150,10 @@ public enum Unpacker {
                 .precomposedStringWithCanonicalMapping
                 .lowercased()
         }
+        // Top-level names that need a folder — directory entries and the
+        // parents of nested files — claimed exclusively before the first
+        // byte is written (`claimTopLevelDirectories` below).
+        var topFolderNames = Set<String>()
 
         for entry in reader.entries {
             let name = reader.name(of: entry, forcedEncoding: options.forcedEncoding)
@@ -176,6 +180,9 @@ public enum Unpacker {
                         (original: originalPath, chosen: components[components.count - 1]))
                 }
                 claimedPaths.insert(collisionKey(components))
+            }
+            if entry.isDirectory || components.count > 1 {
+                topFolderNames.insert(components[0])
             }
             work.append((entry, components))
         }
@@ -236,29 +243,23 @@ public enum Unpacker {
             topItems = [wrapper]
         } else {
             // Uniquify each top-level name — against the filesystem AND the
-            // other assigned names, so "docs"→"docs 2" can't collide with a
-            // genuine "docs 2" top-level entry.
-            var assigned = Set<String>()
+            // other assigned names, on the same folded key files use: so
+            // "docs"→"docs 2" can't collide with a genuine "docs 2" entry,
+            // and "Docs"/"docs" from a case-sensitive system do not meet in
+            // one exclusive mkdir on a case-insensitive volume.
+            var assignedKeys = Set<String>()
             for top in topNames.sorted() {
                 let final = PathUtil.uniqueName(top) { candidate in
-                    assigned.contains(candidate)
+                    assignedKeys.contains(collisionKey([candidate]))
                         || PathUtil.somethingExists(at: destBase.appendingPathComponent(candidate))
                 }
-                assigned.insert(final)
+                assignedKeys.insert(collisionKey([final]))
                 if final != top { renames[top] = final }
                 topItems.append(destBase.appendingPathComponent(final))
             }
             base = destBase
             root = topItems.count == 1 ? topItems[0] : destBase
         }
-        // Top-level names that need a folder — directory entries, and the
-        // parents of nested files. Claimed below, before any byte is
-        // written; top-level *files* are claimed by their own O_EXCL create
-        // when reached, since a file cannot be claimed without being written.
-        let topDirectories = wrap ? [] : Set(
-            work.filter { $0.entry.isDirectory || $0.components.count > 1 }
-                .map { renames[$0.components[0]] ?? $0.components[0] })
-            .sorted()
 
         var files = 0
         var directories = 0
@@ -301,12 +302,15 @@ public enum Unpacker {
         // destination. Each top-level folder is claimed with an exclusive
         // mkdir before the first entry is written, so a name another
         // process took since the uniqueness check fails here — with nothing
-        // written yet — rather than minutes later. Everything created
-        // beneath a claimed folder during this extraction is ours; inside
-        // a wrapper, the wrapper is the claim.
+        // written yet — rather than minutes later. Top-level *files* are
+        // claimed by their own O_EXCL create when reached: a file cannot be
+        // claimed without being written. Everything created beneath a
+        // claimed folder during this extraction is ours; inside a wrapper,
+        // the wrapper is the claim.
         func claimTopLevelDirectories() throws {
-            for top in topDirectories {
-                let url = base.appendingPathComponent(top)
+            guard !wrap else { return }
+            for top in topFolderNames.sorted() {
+                let url = base.appendingPathComponent(renames[top] ?? top)
                 try PathUtil.createDirectoryExclusively(at: url)
                 owned.adopt(url)
             }

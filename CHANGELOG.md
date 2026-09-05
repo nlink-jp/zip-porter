@@ -17,7 +17,9 @@
   a name taken in that window fails the extraction up front with `File
   exists` rather than after minutes of work. A dangling symlink at a
   planned name now counts as taken (the name moves to "name 2") instead
-  of failing the extraction
+  of failing the extraction, and top-level folders that differ only by
+  case (`Docs/` and `docs/` from a case-sensitive system) are kept apart
+  as "docs 2" instead of meeting in one folder
   ([ADR-0005](docs/en/adr/0005-review-response-ownership-ranges-budget.md),
   review finding ZP-01)
 - **The overlap check could be bypassed through the local header.** Entry
@@ -38,10 +40,11 @@
   it on some failure branches but not others — a write failing part-way
   (disk full, a size limit) left a `zp-*.deflate` of up to 16 MB beside
   the archive, holding pre-encryption data. Scratch storage is now one
-  hidden arena file per pack, created on first need and owned by the
-  compress call until the writer is done with it; every exit path removes
-  it through that one owner, and there are no per-entry scratch files to
-  track (ADR-0005, review finding ZP-03)
+  hidden arena file per pack, created on first need and owned by the pack
+  itself; one release removes it on every exit path, and there are no
+  per-entry scratch files to track. When the arena cannot be created (a
+  read-only destination) the error names the cause, not the hidden file
+  (ADR-0005, review finding ZP-03)
 - **Memory while packing grew with the number of files.** The 16 MB spill
   threshold bounded each entry while it was being compressed, but finished
   results below it stayed in memory until every entry was done — 64

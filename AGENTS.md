@@ -10,7 +10,7 @@ clean, ad-free, fully-local app. **Apple Silicon, macOS 14+.**
 (`ZipPorterCore`: ZIP R/W, ZIP64, ZipCrypto + WinZip AES, encoding
 auto-detect, junk filter), full CLI (`pack` / `unpack` / `inspect`), and
 the AppKit GUI (drop window, pack options sheet, Unarchiver-style
-extraction settings window, `.zip` handling, en/ja l10n, icon). ~90 tests
+extraction settings window, `.zip` handling, en/ja l10n, icon). ~200 tests
 including cross-verification against Info-ZIP, ditto, 7-Zip, and Python
 zipfile; output real-machine verified on Windows Explorer. Design of
 record: `docs/en/zip-porter-rfp.md` / `docs/ja/zip-porter-rfp.ja.md`.
@@ -49,7 +49,8 @@ Sources/ZipPorterCore/      UI-independent engine (no AppKit): CRC32, DOSDateTim
                             ZipStructures, DeflateStream, ZipReader, ZipWriter,
                             ZipCryptoCipher, WinZipAES, EncodingDetector,
                             JunkFilter, FileNameTransform, Packer, Unpacker, PathUtil,
-                            PosixPermissions, XattrUtil, ZeroingBytes, SingleInstance
+                            PosixPermissions, XattrUtil, ZeroingBytes, SingleInstance,
+                            ParallelCompressor (+ ScratchArena, MemoryLedger), ZlibDeflate
 Sources/ZipPorter/          AppKit app + CLI: App (entry/routing/delegate), CLI (usage),
                             CLICommands (parse + run), PasswordPrompt, MainMenu,
                             MainViewController (flows), OneShotQuit (lifetime
@@ -103,9 +104,10 @@ docs/{en,ja}/               RFP (design of record) + adr/ (0001 hardening,
   spills compressed output above 16 MB per entry — and finished results
   beyond an aggregate budget of cores × 16 MB (ADR-0005) — into **one
   hidden scratch arena per pack** (`.zp-scratch-<uuid>` beside the
-  archive, created on first need); results reference byte ranges in it,
-  the writer reads them back, and `Output.cleanUp()` removes it on every
-  exit path. Deliberately no per-entry scratch files: a file per entry
+  archive, created on first need). `Packer` creates it and one `defer`
+  removes it on every exit path; the compressor owns nothing on disk.
+  Results reference byte ranges in it and the writer reads them back
+  through one shared descriptor. Deliberately no per-entry scratch files: a file per entry
   meant a lifecycle per entry to get right on every failure branch
   (shipped wrong through v0.11.2), and with the budget it would have meant
   thousands of files flickering in the user's folder. The knobs travel in

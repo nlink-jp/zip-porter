@@ -49,13 +49,7 @@ public enum PathUtil {
             descriptor = open(path, O_WRONLY | O_CREAT | O_EXCL, permissions)
             if descriptor < 0 { failure = errno }
         }
-        guard descriptor >= 0 else {
-            throw NSError(domain: NSPOSIXErrorDomain, code: Int(failure), userInfo: [
-                NSFilePathErrorKey: url.path,
-                NSLocalizedDescriptionKey:
-                    "\(url.lastPathComponent): \(String(cString: strerror(failure)))",
-            ])
-        }
+        guard descriptor >= 0 else { throw posixError(failure, at: url) }
         return FileHandle(fileDescriptor: descriptor, closeOnDealloc: true)
     }
 
@@ -70,18 +64,33 @@ public enum PathUtil {
     /// `permissions` goes through the umask like any other `mkdir(2)`.
     public static func createDirectoryExclusively(at url: URL,
                                                   permissions: mode_t = 0o777) throws {
-        var failure: Int32 = 0
+        var failure: Int32 = EINVAL
         url.withUnsafeFileSystemRepresentation { path in
-            guard let path else { failure = EINVAL; return }
-            if mkdir(path, permissions) != 0 { failure = errno }
+            guard let path else { return }
+            failure = mkdir(path, permissions) == 0 ? 0 : errno
         }
-        guard failure == 0 else {
-            throw NSError(domain: NSPOSIXErrorDomain, code: Int(failure), userInfo: [
-                NSFilePathErrorKey: url.path,
-                NSLocalizedDescriptionKey:
-                    "\(url.lastPathComponent): \(String(cString: strerror(failure)))",
-            ])
+        guard failure == 0 else { throw posixError(failure, at: url) }
+    }
+
+    /// A POSIX failure reported the way Foundation reports its own: the
+    /// path in `userInfo`, "name: strerror" as the description.
+    static func posixError(_ code: Int32, at url: URL) -> NSError {
+        NSError(domain: NSPOSIXErrorDomain, code: Int(code), userInfo: [
+            NSFilePathErrorKey: url.path,
+            NSLocalizedDescriptionKey: "\(url.lastPathComponent): \(String(cString: strerror(code)))",
+        ])
+    }
+
+    /// The human-readable cause of an error without the path it names —
+    /// `strerror` for POSIX failures, the localized description otherwise.
+    /// For a message about an internal file (a scratch arena) whose name
+    /// would tell the user nothing.
+    static func reason(of error: Error) -> String {
+        let nsError = error as NSError
+        if nsError.domain == NSPOSIXErrorDomain {
+            return String(cString: strerror(Int32(nsError.code)))
         }
+        return nsError.localizedDescription
     }
 
     /// True when *anything* sits at `url` — a file, a directory, or a
