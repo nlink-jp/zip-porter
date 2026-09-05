@@ -217,6 +217,12 @@ final class ZipWriterTests: XCTestCase {
         let p = Process()
         p.executableURL = URL(fileURLWithPath: tool)
         p.arguments = args
+        // Under a UTF-8 locale `unzip -t` prints Japanese names with `?`
+        // substituted *inside* multibyte sequences, so its output is not
+        // valid UTF-8 and the strict decode below yields "" — the
+        // assertions on the text then fail on the developer's locale and
+        // pass on another. The C locale makes the output the same everywhere.
+        p.environment = ProcessInfo.processInfo.environment.merging(["LC_ALL": "C"]) { _, pinned in pinned }
         let pipe = Pipe()
         p.standardOutput = pipe
         p.standardError = pipe
