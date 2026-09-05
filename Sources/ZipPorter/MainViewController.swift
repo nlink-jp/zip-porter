@@ -614,44 +614,9 @@ final class MainViewController: NSViewController, DropViewDelegate {
         // the whole request, in `finishBatch`.
     }
 
-    private static func describe(_ error: Error) -> String {
-        switch error {
-        case let e as ZipWriterError:
-            if case .nameNotEncodable(let name) = e {
-                return L("This name cannot be stored as CP932:") + " \(name)"
-            }
-            return "\(e)"
-        case let e as ZipReaderError:
-            switch e {
-            case .sizeExceedsDeclared(let name):
-                return L("An entry expands far beyond the size the archive declares — it may be a decompression bomb.")
-                    + "\n\(name)"
-            case .overlappingEntries:
-                return L("The archive's entries share overlapping data — it is malformed or a decompression bomb.")
-            case .crcMismatch, .authenticationFailed:
-                return L("The archive is damaged or was tampered with.")
-            case .notAZipFile:
-                return L("This file is not a ZIP archive.")
-            default:
-                return "\(e)"
-            }
-        case let e as Unpacker.Failure:
-            switch e {
-            case .insufficientSpace(let required, let available):
-                return L("Not enough free space to extract this archive.")
-                    + "\n" + L("Needed:") + " \(byteString(required))  "
-                    + L("Available:") + " \(byteString(available))"
-            case .emptyArchive:
-                return L("The archive contains nothing that can be extracted.")
-            case .destinationNotADirectory:
-                return L("The destination is not a folder.")
-            }
-        default:
-            return error.localizedDescription
-        }
-    }
-
-    private static func byteString(_ bytes: UInt64) -> String {
-        ByteCountFormatter.string(fromByteCount: Int64(clamping: bytes), countStyle: .file)
+    /// Engine error → sentence. Lives in `ErrorMessages` (pure, tested,
+    /// shared with the CLI) rather than here.
+    private nonisolated static func describe(_ error: Error) -> String {
+        ErrorMessages.describe(error)
     }
 }

@@ -58,7 +58,8 @@ Sources/ZipPorter/          AppKit app + CLI: App (entry/routing/delegate), CLI 
                             BatchProgress), CompletionNotifier, DropView,
                             Sheets (options/
                             password/progress), SettingsWindow, Preferences, L10n,
-                            Resources/{en,ja}.lproj
+                            ErrorMessages (engine errors → sentences, shared
+                            with the CLI, tested), Resources/{en,ja}.lproj
 Tests/ZipPorterCoreTests/   engine tests + testdata/ cross-verification fixtures
 Tests/ZipPorterTests/       CLI routing/parsing, localization, main-menu, quit rule,
                             batch reporting tests

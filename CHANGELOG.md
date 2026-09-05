@@ -2,6 +2,23 @@
 
 ## [Unreleased]
 
+### Changed
+
+- **An archive with a damaged local header is now refused when it is
+  opened** — `inspect` and the GUI listing included — rather than failing
+  that one entry during extraction. Consequence of resolving every entry's
+  data offset from its local header at open (ADR-0005 §B); consistent with
+  "refuse rather than repair". Directory entries stay outside the check
+- **The new failure paths read as sentences in both front ends.** A name
+  another process took while the extraction ran ("Another item appeared at
+  a name this extraction was about to use… Try again." plus the name), a
+  scratch file that could not be created ("The archive could not be
+  written." plus the cause), and a malformed archive refused at open ("The
+  archive is malformed and was refused." plus the detail) were shown as a
+  bare POSIX line or a Swift enum dump. The error-to-message mapping moved
+  out of the view controller into `ErrorMessages`, shared with the CLI and
+  tested; strings added to en/ja
+
 ### Fixed
 
 - **A failed extraction could delete files it did not create.** The

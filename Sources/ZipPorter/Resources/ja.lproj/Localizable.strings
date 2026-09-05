@@ -66,6 +66,9 @@
 "Available:" = "空き:";
 "The archive contains nothing that can be extracted." = "このアーカイブには展開できる内容がありません。";
 "The destination is not a folder." = "展開先がフォルダではありません。";
+"The archive could not be written." = "アーカイブを書き込めませんでした。";
+"The archive is malformed and was refused." = "アーカイブの構造が不正なため拒否しました。";
+"Another item appeared at a name this extraction was about to use, so nothing was extracted. Try again." = "この展開が使おうとした名前に別の項目が作成されたため、何も展開していません。もう一度お試しください。";
 "Skipped entries with unsafe paths:" = "安全でないパスのエントリをスキップしました:";
 "Skipped symbolic links:" = "シンボリックリンクをスキップしました:";
 "Duplicate names were extracted under new names:" = "重複する名前は別名で展開しました:";

@@ -242,6 +242,12 @@ enum CLIRun {
                 fail("archive needs \(formatBytes(required)) but only \(formatBytes(available)) is free at the destination")
             }
         } catch {
+            if let name = ErrorMessages.takenName(from: error) {
+                // The exclusive create found something at a name that was
+                // free when it was chosen (ADR-0005): another writer got
+                // there first, and nothing of ours is left behind.
+                fail("another item appeared at '\(name)' while extracting — nothing was extracted; try again")
+            }
             fail("\(error.localizedDescription)")
         }
     }

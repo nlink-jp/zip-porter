@@ -66,6 +66,9 @@
 "Available:" = "Available:";
 "The archive contains nothing that can be extracted." = "The archive contains nothing that can be extracted.";
 "The destination is not a folder." = "The destination is not a folder.";
+"The archive could not be written." = "The archive could not be written.";
+"The archive is malformed and was refused." = "The archive is malformed and was refused.";
+"Another item appeared at a name this extraction was about to use, so nothing was extracted. Try again." = "Another item appeared at a name this extraction was about to use, so nothing was extracted. Try again.";
 "Skipped entries with unsafe paths:" = "Skipped entries with unsafe paths:";
 "Skipped symbolic links:" = "Skipped symbolic links:";
 "Duplicate names were extracted under new names:" = "Duplicate names were extracted under new names:";
