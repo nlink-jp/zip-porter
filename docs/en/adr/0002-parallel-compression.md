@@ -65,6 +65,14 @@ only below a threshold; larger ones stream to a temporary file that the
 write phase drains and deletes. Worst-case memory is therefore
 `concurrency × threshold`, not "the whole archive".
 
+> **Amended by ADR-0005 (2026-09-05).** The threshold as first shipped
+> bounded each entry *while it was being compressed*; finished results
+> below it stayed in memory until every entry was done, so the retained
+> total grew with the input count. An aggregate budget of
+> `cores × threshold` now applies to the retained results as well — a
+> result that would exceed it is spilled like an over-threshold entry — so
+> peak memory is about `2 × cores × threshold` regardless of input size.
+
 Single-entry archives skip the parallel path entirely — there is nothing to
 overlap, and the streaming path already handles them with less bookkeeping.
 

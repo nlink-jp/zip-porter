@@ -95,6 +95,16 @@ exhaustion.
 
 The check is O(n log n) over the entry count, on data already parsed.
 
+> **Amended by ADR-0005 (2026-09-05).** As first shipped, the range end was
+> approximated from the central directory (`offset + 30 + name length +
+> compressed size`) while extraction read from the *local* header's name
+> and extra lengths — two derivations the format does not require to
+> agree, and an extra field large enough to hide another local header
+> passed the check. Ranges are now resolved once, from each entry's local
+> header, at open; `extract` reads the same `dataOffset`. The "data already
+> parsed" remark above no longer holds: opening costs one 30-byte read per
+> file entry.
+
 ### 4. Quarantine propagation
 
 If the source archive carries `com.apple.quarantine`, copy that attribute
