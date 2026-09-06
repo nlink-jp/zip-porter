@@ -1,5 +1,15 @@
 # Changelog
 
+## [Unreleased]
+
+### Fixed
+
+- **Removed a third-party notice that never belonged to this project.**
+  LICENSE carried grid-edit's attribution to TableTool — pasted in by mistake,
+  and describing a CSV editor's document architecture in a ZIP tool's licence.
+  Nothing in zip-porter derives from TableTool. LICENSE is now the plain MIT
+  text, which also lets GitHub report the licence as MIT instead of "Other".
+
 ## [v0.12.0] - 2026-09-05
 
 ### Changed
