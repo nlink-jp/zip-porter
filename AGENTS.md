@@ -72,6 +72,15 @@ docs/{en,ja}/               RFP (design of record) + adr/ (0001 hardening,
 
 ## Project rules
 
+- **The release build pins the linked SDK.** macOS decides which generation of
+  window chrome to draw from `LC_BUILD_VERSION`'s sdk field, and the Xcode 27 /
+  Swift 6.4 `swift build` stamps it with the deployment target, not the SDK it
+  compiled against — an app shipped that way draws with the previous design
+  (square window corners). `make build` passes `-platform_version macos
+  $(MACOS_MIN) $(MACOS_SDK)` (the minimum read from Package.swift, so it is
+  stated once), and `make verify-release` fails if the built bundle's sdk is not
+  the current one. Signing, notarization and every test pass either way, so the
+  gate is the only thing that can catch it.
 - **ZipPorterCore never imports AppKit.** All engine logic is pure,
   unit-tested code; the GUI (Phase 2) and CLI both consume Packer/Unpacker.
 - **Scope is the RFP.** ZIP only — no 7z/RAR/tar, no Windows/Linux builds,
