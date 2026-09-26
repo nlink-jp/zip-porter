@@ -4,6 +4,9 @@
 
 ### Fixed
 
+- The release zip no longer carries AppleDouble (`._*`) entries: the app is
+  zipped with `ditto --norsrc --noextattr`, so its signature survives unpacking
+  with `unzip`. `make verify-release` refuses a zip that carries them.
 - **Removed a third-party notice that never belonged to this project.**
   LICENSE carried grid-edit's attribution to TableTool — pasted in by mistake,
   and describing a CSV editor's document architecture in a ZIP tool's licence.
