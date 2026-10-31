@@ -1,6 +1,6 @@
 # Changelog
 
-## [Unreleased]
+## [v0.13.0] - 2026-10-31
 
 ### Added
 
@@ -24,7 +24,11 @@
 - **An archive in a compression method ZipPorter cannot read now says so
   in a sentence** naming the method number, instead of showing
   `unsupportedMethod(…)` untranslated.
-
+- **Windows draw in the current macOS design.** The release build now
+  records the SDK it was compiled against; built with the Xcode 27
+  toolchain without that, macOS drew the app with the previous design
+  (square window corners). `make verify-release` refuses a bundle that
+  records an older SDK.
 - The release zip no longer carries AppleDouble (`._*`) entries: the app is
   zipped with `ditto --norsrc --noextattr`, so its signature survives unpacking
   with `unzip`. `make verify-release` refuses a zip that carries them.
