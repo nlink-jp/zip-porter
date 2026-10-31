@@ -184,8 +184,9 @@ final class ArchiveDiagnosticsTests: XCTestCase {
         XCTAssertEqual(ArchiveDiagnostics.tally([]), "none")
     }
 
-    /// Names, CRCs and times never appear — the report's one promise.
-    func testNoNameCrcOrTimeReachesTheSummary() throws {
+    /// Names and CRCs never appear — the report's one promise. (Times are
+    /// left out by construction: no line reads `dosTime`/`dosDate`.)
+    func testNoNameOrCrcReachesTheSummary() throws {
         let marker = "MARKER"
         let url = try rawZip([
             RawEntry(name: "\(marker)/", versionMadeBy: 20),

@@ -156,7 +156,7 @@ final class FailureReportTests: XCTestCase {
 
     // MARK: - Batch
 
-    func testBatchReportCoversOnlyFailuresThatCarryOne() {
+    func testBatchReportCoversOnlyFailuresThatCarryOne() throws {
         var batch = ExtractionBatch(requested: 3)
         XCTAssertNil(batch.failureReport(environment: environment), "no failure, no Copy Details")
         batch.record(ExtractionBatch.Failure(archive: "\(marker).zip", reason: "damaged"))
@@ -164,9 +164,9 @@ final class FailureReportTests: XCTestCase {
         batch.record(ExtractionBatch.Failure(
             archive: "\(marker)-2.zip", reason: "damaged",
             report: FailureReport.section(position: 2, error: "E", structure: nil)))
-        let report = try? XCTUnwrap(batch.failureReport(environment: environment))
-        XCTAssertTrue(report?.contains("archive 3 of 3") == true, report ?? "")
-        XCTAssertFalse(report?.contains(marker) == true, report ?? "")
+        let report = try XCTUnwrap(batch.failureReport(environment: environment))
+        XCTAssertTrue(report.contains("archive 3 of 3"), report)
+        XCTAssertFalse(report.contains(marker), report)
     }
 
     // MARK: - CLI

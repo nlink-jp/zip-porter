@@ -88,7 +88,8 @@ final class ArchitectureTests: XCTestCase {
         // report the person forwards without reading.
         let files = try FileManager.default.contentsOfDirectory(atPath: Self.engineSources.path)
             .filter { $0.hasSuffix(".swift") }
-        let carriers = ["ZipReaderError.corrupt(", "detail:", ".invalid("]
+        XCTAssertTrue(files.contains("ZipReader.swift"), "the scan must see the engine sources")
+        let carriers = ["ZipReaderError.corrupt(", ".corrupt(", "detail:", ".invalid("]
         let forbidden = try NSRegularExpression(pattern: #"\\\([^)]*(name|Name|path|Path|url|URL)"#)
         var offenders: [String] = []
         for file in files {
