@@ -260,6 +260,9 @@ final class OperationSheet: NSObject {
     private let indicator = NSProgressIndicator()
     private let cancelButton = NSButton()
     private let doneButton = NSButton()
+    /// Shown in the result state only when something failed (ADR-0007).
+    private let copyButton = NSButton()
+    private var report: String?
     private var dismissal: (() -> Void)?
     private var retainedSelf: OperationSheet?
     private static let contentWidth: CGFloat = 380
@@ -299,8 +302,13 @@ final class OperationSheet: NSObject {
         doneButton.target = self
         doneButton.action = #selector(donePressed)
         doneButton.isHidden = true
+        copyButton.title = L("Copy Details")
+        copyButton.bezelStyle = .rounded
+        copyButton.target = self
+        copyButton.action = #selector(copyPressed)
+        copyButton.isHidden = true
 
-        let buttons = NSStackView(views: [NSView(), cancelButton, doneButton])
+        let buttons = NSStackView(views: [NSView(), cancelButton, copyButton, doneButton])
         buttons.orientation = .horizontal
         let stack = NSStackView(views: [titleLabel, scopeLabel, indicator,
                                         statusLabel, detailLabel, buttons])
@@ -315,6 +323,12 @@ final class OperationSheet: NSObject {
 
     @objc private func cancelPressed() { flag.cancel() }
     @objc private func donePressed() { dismiss() }
+    /// Copies without closing: the results are still on the sheet.
+    @objc private func copyPressed() {
+        guard let report else { return }
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(report, forType: .string)
+    }
 
     /// `window` is nil when the app was launched by Finder to handle one
     /// archive: there is no droplet window, so the status dialog stands on
@@ -355,11 +369,14 @@ final class OperationSheet: NSObject {
 
     /// Switch to the result state. The sheet stays up until the user
     /// dismisses it, then `completion` runs.
-    func finish(title: String, summary: String, notes: [String], completion: @escaping () -> Void) {
+    func finish(title: String, summary: String, notes: [String], report: String? = nil,
+                completion: @escaping () -> Void) {
         indicator.isHidden = true
         scopeLabel.isHidden = true
         cancelButton.isHidden = true
         doneButton.isHidden = false
+        self.report = report
+        copyButton.isHidden = report == nil
         titleLabel.stringValue = title
         statusLabel.stringValue = summary
         statusLabel.textColor = .labelColor

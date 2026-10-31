@@ -77,4 +77,29 @@ final class ArchitectureTests: XCTestCase {
         XCTAssertEqual(occurrences(of: "readU16(at: 28)", in: reader), 1, "local extra length read once")
         XCTAssertEqual(occurrences(of: ".dataOffset =", in: reader), 1, "dataOffset assigned in one place")
     }
+
+    // MARK: - ADR-0007: error details never carry a name
+
+    func testErrorDetailsNeverInterpolateANameOrPath() throws {
+        // The failure report prints `corrupt` and `entryCorrupt` details and
+        // Inflate64's reasons verbatim; names belong in the labeled
+        // `entryName` field, which the report leaves out. A detail built
+        // with a name, path or URL interpolated is how a name would reach a
+        // report the person forwards without reading.
+        let files = try FileManager.default.contentsOfDirectory(atPath: Self.engineSources.path)
+            .filter { $0.hasSuffix(".swift") }
+        let carriers = ["ZipReaderError.corrupt(", "detail:", ".invalid("]
+        let forbidden = try NSRegularExpression(pattern: #"\\\([^)]*(name|Name|path|Path|url|URL)"#)
+        var offenders: [String] = []
+        for file in files {
+            for line in try source(file).split(separator: "\n") {
+                let text = String(line)
+                guard carriers.contains(where: text.contains) else { continue }
+                if forbidden.firstMatch(in: text, range: NSRange(text.startIndex..., in: text)) != nil {
+                    offenders.append("\(file): \(text.trimmingCharacters(in: .whitespaces))")
+                }
+            }
+        }
+        XCTAssertEqual(offenders, [], "put the name in `entryName`, keep the detail name-free")
+    }
 }

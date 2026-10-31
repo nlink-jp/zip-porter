@@ -36,6 +36,19 @@ final class ErrorMessagesTests: XCTestCase {
         XCTAssertFalse(message.contains("corrupt("), "no enum dump: \(message)")
     }
 
+    /// The screen may name the entry — the person is looking at their own
+    /// file; only the copied report leaves names out (ADR-0007).
+    func testDamagedEntriesAreNamedOnScreen() {
+        let crc = ErrorMessages.describe(ZipReaderError.crcMismatch(entryName: "data/report.txt"))
+        XCTAssertTrue(crc.hasPrefix(L("The archive is damaged or was tampered with.")), crc)
+        XCTAssertTrue(crc.hasSuffix("\ndata/report.txt"), crc)
+        let entry = ErrorMessages.describe(
+            ZipReaderError.entryCorrupt(entryName: "big.bin", detail: "Deflate64 stream ends early"))
+        XCTAssertTrue(entry.hasPrefix(L("The archive is malformed and was refused.")), entry)
+        XCTAssertTrue(entry.hasSuffix("\nbig.bin: Deflate64 stream ends early"), entry)
+        XCTAssertFalse(entry.contains("entryCorrupt("), "no enum dump: \(entry)")
+    }
+
     func testUnsupportedMethodReadsAsASentenceNamingTheMethod() {
         let message = ErrorMessages.describe(ZipReaderError.unsupportedMethod(12))
         XCTAssertEqual(message, String(format: L("This archive uses a compression method ZipPorter cannot extract (method %d)."), 12))

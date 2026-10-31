@@ -1,5 +1,27 @@
 # Changelog
 
+## [Unreleased]
+
+### Added
+
+- **Copy Details on failures.** The error dialog, and the result dialog of
+  a set where some archives failed, gain a **Copy Details** button that
+  puts a plain-text report on the clipboard; `zip-porter unpack --report`
+  prints the same report to stderr. It carries the ZipPorter and macOS
+  versions, the error, and the archive's structure — compression methods,
+  encryption, the writer's host and version, version needed, extra-field
+  IDs, and the failing entry's shape — and never a file name, entry name,
+  path, content, CRC, timestamp or password, so a person who cannot share
+  a confidential archive can still send it. The Deflate64 failure behind
+  v0.13.0 reached the developer as "an extraction error"; this report
+  would have said "method 9, made on Windows" (ADR-0007).
+
+### Fixed
+
+- **CRC failures and damaged entries name the entry on screen.** A CRC
+  mismatch said only that the archive was damaged; damaged Deflate data
+  surfaced as "ZipPorterCore.DeflateStream.Failure error 1".
+
 ## [v0.13.0] - 2026-10-31
 
 ### Added

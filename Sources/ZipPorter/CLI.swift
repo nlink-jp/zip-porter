@@ -17,7 +17,7 @@ enum CLI {
 
     commands:
       pack <input>... [-o <output.zip>] [--password] [--cp932] [--zipcrypto] [--no-clean]
-      unpack <input.zip> [-o <dest-dir>] [--password] [--encoding auto|utf8|cp932]
+      unpack <input.zip> [-o <dest-dir>] [--password] [--encoding auto|utf8|cp932] [--report]
       inspect <input.zip>
 
     Run with no command to launch the GUI.

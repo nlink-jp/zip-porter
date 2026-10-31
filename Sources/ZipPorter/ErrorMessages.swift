@@ -24,12 +24,14 @@ enum ErrorMessages {
                     + "\n\(name)"
             case .overlappingEntries:
                 return L("The archive's entries share overlapping data — it is malformed or a decompression bomb.")
-            case .crcMismatch, .authenticationFailed:
-                return L("The archive is damaged or was tampered with.")
+            case .crcMismatch(let name), .authenticationFailed(let name):
+                return L("The archive is damaged or was tampered with.") + "\n\(name)"
             case .notAZipFile:
                 return L("This file is not a ZIP archive.")
             case .corrupt(let detail):
                 return L("The archive is malformed and was refused.") + "\n\(detail)"
+            case .entryCorrupt(let name, let detail):
+                return L("The archive is malformed and was refused.") + "\n\(name): \(detail)"
             case .unsupportedMethod(let method):
                 return String(format: L("This archive uses a compression method ZipPorter cannot extract (method %d)."),
                               Int(method))

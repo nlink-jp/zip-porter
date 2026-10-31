@@ -94,3 +94,4 @@
 "Could not extract these archives:" = "次のアーカイブを展開できませんでした:";
 "Cancelled — the remaining archives were not extracted." = "キャンセルしました — 残りのアーカイブは展開していません。";
 "…and %d more" = "…ほか %d 件";
+"Copy Details" = "詳細をコピー";

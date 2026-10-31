@@ -59,6 +59,15 @@ Launch ZipPorter and drop things on the window:
   the app leaves as soon as the work is done; dropping onto the window
   leaves it open for the next file. Archives opened while one is still
   running are queued and handled in turn
+- **When something fails**, the error dialog — and the result dialog of a
+  set where some archives failed — has a **Copy Details** button. It puts
+  a plain-text report on the clipboard for whoever asked about the
+  failure: ZipPorter and macOS versions, the error, and the archive's
+  structure (compression methods, encryption, the writer's host and
+  version, extra-field IDs, the failing entry's shape). It never contains
+  a file name, entry name, path, content or password, so it can be sent
+  even when the archive itself cannot
+  ([ADR-0007](docs/en/adr/0007-failure-report.md))
 - **Settings** (the gear in the window, or ⌘,) — The Unarchiver-style
   extraction preferences:
   destination (same folder / ask every time / a fixed folder), when to
@@ -97,7 +106,7 @@ Commands:
 
 ```
 zip-porter pack <input>... [-o <output.zip>] [--password] [--cp932] [--zipcrypto] [--no-clean]
-zip-porter unpack <input.zip> [-o <dest-dir>] [--password] [--encoding auto|utf8|cp932]
+zip-porter unpack <input.zip> [-o <dest-dir>] [--password] [--encoding auto|utf8|cp932] [--report]
 zip-porter inspect <input.zip>
 zip-porter --version
 ```
@@ -133,6 +142,9 @@ Run with no command to launch the GUI.
   ("name 2")
 - Extracts to the archive's own folder by default, or `-o <dir>`
   (created if missing, like `unzip -d`)
+- `--report` follows a failure with the same report as the GUI's Copy
+  Details, on stderr. The one-line message before it may name the file;
+  the report never does
 
 ### Extraction safety
 

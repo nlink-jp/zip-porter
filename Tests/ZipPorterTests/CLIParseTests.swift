@@ -41,6 +41,11 @@ final class CLIParseTests: XCTestCase {
         XCTAssertEqual(parsed.input, "a.zip")
         XCTAssertNil(parsed.output)
         XCTAssertEqual(parsed.encoding, "auto")
+        XCTAssertFalse(parsed.report, "the report is opt-in: scripts keep a one-line stderr")
+    }
+
+    func testUnpackReportFlag() throws {
+        XCTAssertTrue(try CLIParse.unpack(["--report", "a.zip"]).get().report)
     }
 
     func testUnpackFlags() throws {

@@ -51,6 +51,9 @@ struct ExtractionBatch {
     struct Failure: Equatable {
         var archive: String
         var reason: String
+        /// This archive's part of the "Copy Details" report — nil for a
+        /// failure that has nothing to report beyond its reason (ADR-0007).
+        var report: FailureReport.Section? = nil
     }
 
     /// How many archives the user asked for — the denominator in
@@ -129,6 +132,14 @@ struct ExtractionBatch {
             lines.append(L("Cancelled — the remaining archives were not extracted."))
         }
         return lines
+    }
+
+    /// The "Copy Details" text, or nil when no failure carries a report.
+    func failureReport(environment: FailureReport.Environment) -> String? {
+        let sections = failures.compactMap(\.report)
+        guard !sections.isEmpty else { return nil }
+        return FailureReport.compose(environment: environment, operation: "extract",
+                                     requested: requested, sections: sections)
     }
 
     /// Headline and detail for the "nothing extracted" alert.

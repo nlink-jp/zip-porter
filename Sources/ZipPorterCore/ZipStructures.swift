@@ -97,6 +97,13 @@ public struct ZipEntry: Sendable {
     public var externalAttributes: UInt32
     public var versionMadeBy: UInt16
     public var encryption: Zip.Encryption
+    /// "Version needed to extract" from the central directory. Kept only
+    /// for the failure report, which identifies the writer by it (ADR-0007).
+    public var versionNeeded: UInt16 = 0
+    /// IDs of the central directory's extra fields, in order — IDs only,
+    /// never their contents (ADR-0007). Nil when the fields' lengths do not
+    /// add up, so nothing past the first bad length passes for an ID.
+    public var extraFieldIDs: [UInt16]? = []
     /// Absolute offset of the entry's payload, resolved from the *local*
     /// header when the archive is opened (ADR-0005). The local header's name
     /// and extra lengths may differ from the central directory's, and this

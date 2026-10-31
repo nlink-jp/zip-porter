@@ -177,16 +177,32 @@ final class MainViewController: NSViewController, DropViewDelegate {
         DispatchQueue.main.async { [weak self] in self?.start(next) }
     }
 
-    private func showError(_ headline: String, _ detail: String) {
+    /// `report`, when given, adds "Copy Details": the ADR-0007 text the
+    /// user can paste into a reply. OK stays the default button.
+    private func showError(_ headline: String, _ detail: String, report: String? = nil) {
         let alert = NSAlert()
         alert.messageText = headline
         alert.informativeText = detail
         alert.alertStyle = .warning
-        if let hostWindow {
-            alert.beginSheetModal(for: hostWindow)
-        } else {
-            alert.runModal()
+        if report != nil {
+            alert.addButton(withTitle: L("OK"))
+            alert.addButton(withTitle: L("Copy Details"))
         }
+        let handle: (NSApplication.ModalResponse) -> Void = { response in
+            if let report, response == .alertSecondButtonReturn {
+                Self.copyToPasteboard(report)
+            }
+        }
+        if let hostWindow {
+            alert.beginSheetModal(for: hostWindow, completionHandler: handle)
+        } else {
+            handle(alert.runModal())
+        }
+    }
+
+    static func copyToPasteboard(_ text: String) {
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(text, forType: .string)
     }
 
     // MARK: - Pack flow
@@ -335,9 +351,17 @@ final class MainViewController: NSViewController, DropViewDelegate {
                     self.busy = false
                 }
             } catch {
+                // Creating has no archive to describe: the error is the
+                // whole report (ADR-0007).
+                let report = FailureReport.compose(
+                    environment: .current, operation: "create", requested: 1,
+                    sections: [FailureReport.section(position: 0,
+                                                     error: FailureReport.describe(error),
+                                                     structure: [])])
                 DispatchQueue.main.async {
                     sheet.dismiss()
-                    self.showError(L("Could not create the archive."), Self.describe(error))
+                    self.showError(L("Could not create the archive."), Self.describe(error),
+                                   report: report)
                     self.busy = false
                 }
             }
@@ -419,7 +443,8 @@ final class MainViewController: NSViewController, DropViewDelegate {
                                       position + 1, zips.count, zip.lastPathComponent))
             }
             self.unpackOne(
-                zip, password: password, destination: destination, prefs: prefs, sheet: sheet,
+                zip, position: position, password: password, destination: destination,
+                prefs: prefs, sheet: sheet,
                 progress: { fraction in
                     sheet.setFraction(progress.overall(index: position, fraction: fraction))
                 },
@@ -428,9 +453,9 @@ final class MainViewController: NSViewController, DropViewDelegate {
                     case .done(let archiveOutcome, let accepted):
                         password = accepted ?? password
                         batch.record(archiveOutcome)
-                    case .failed(let reason):
+                    case .failed(let reason, let report):
                         batch.record(ExtractionBatch.Failure(
-                            archive: zip.lastPathComponent, reason: reason))
+                            archive: zip.lastPathComponent, reason: reason, report: report))
                     case .cancelled:
                         batch.cancelled = true
                         self.finishBatch(sheet: sheet, batch: batch, prefs: prefs)
@@ -448,7 +473,7 @@ final class MainViewController: NSViewController, DropViewDelegate {
     /// come out.
     private enum ArchiveResult {
         case done(ArchiveOutcome, acceptedPassword: String?)
-        case failed(reason: String)
+        case failed(reason: String, report: FailureReport.Section)
         case cancelled
     }
 
@@ -463,7 +488,8 @@ final class MainViewController: NSViewController, DropViewDelegate {
         // Nothing came out: an error, not a result with zeroes in it.
         if batch.isTotalFailure {
             sheet.dismiss()
-            showError(batch.failureHeadline, batch.failureDetail)
+            showError(batch.failureHeadline, batch.failureDetail,
+                      report: batch.failureReport(environment: .current))
             busy = false
             return
         }
@@ -486,8 +512,8 @@ final class MainViewController: NSViewController, DropViewDelegate {
             announceCompletion(sheet: sheet, title: batch.title,
                                summary: batch.summary, reveal: reveal, done: done)
         } else {
-            sheet.finish(title: batch.title, summary: batch.summary,
-                         notes: notes, completion: done)
+            sheet.finish(title: batch.title, summary: batch.summary, notes: notes,
+                         report: batch.failureReport(environment: .current), completion: done)
         }
     }
 
@@ -527,6 +553,7 @@ final class MainViewController: NSViewController, DropViewDelegate {
     /// in the result hands back whatever actually worked so the next archive
     /// can try it first.
     private func unpackOne(_ zip: URL,
+                           position: Int,
                            password: String?,
                            destination: URL?,
                            prefs: Preferences,
@@ -543,11 +570,19 @@ final class MainViewController: NSViewController, DropViewDelegate {
             if let path { sheet.update(path) }
         }
         DispatchQueue.global(qos: .userInitiated).async {
+            // Per attempt: a retry after the password prompt starts clean.
+            var failingEntry: Int?
+            func report(_ error: Error) -> FailureReport.Section {
+                FailureReport.section(
+                    position: position, error: FailureReport.describe(error),
+                    structure: FailureReport.structure(of: zip, failingEntry: failingEntry))
+            }
             do {
                 let result = try Unpacker.unpack(
                     zipURL: zip, options: options,
                     progress: { forwarder.forward($0) },
-                    shouldCancel: { flag.isCancelled })
+                    shouldCancel: { flag.isCancelled },
+                    failingEntry: { failingEntry = $0 })
                 DispatchQueue.main.async {
                     // Per-archive housekeeping (folder date, trashing the
                     // archive) happens here; the Finder reveal does not —
@@ -558,6 +593,10 @@ final class MainViewController: NSViewController, DropViewDelegate {
                                      acceptedPassword: password))
                 }
             } catch let error as ZipReaderError where Self.isPasswordProblem(error) {
+                // Kept for a declined prompt: an authentication failure may
+                // be damage rather than a wrong password, and the report is
+                // how that gets told apart.
+                let declinedReport = report(error)
                 DispatchQueue.main.async {
                     let hint = error == .passwordRequired
                         ? L("This archive is encrypted.")
@@ -571,10 +610,12 @@ final class MainViewController: NSViewController, DropViewDelegate {
                                 // Declining the prompt is a decision about
                                 // this archive, not about the batch: say so
                                 // in the result and carry on.
-                                completion(.failed(reason: L("Password required")))
+                                completion(.failed(reason: L("Password required"),
+                                                   report: declinedReport))
                                 return
                             }
-                            self.unpackOne(zip, password: entered, destination: destination,
+                            self.unpackOne(zip, position: position, password: entered,
+                                           destination: destination,
                                            prefs: prefs, sheet: sheet,
                                            progress: progress, completion: completion)
                         }
@@ -582,8 +623,9 @@ final class MainViewController: NSViewController, DropViewDelegate {
             } catch is CancellationError {
                 DispatchQueue.main.async { completion(.cancelled) }
             } catch {
+                let section = report(error)
                 DispatchQueue.main.async {
-                    completion(.failed(reason: Self.describe(error)))
+                    completion(.failed(reason: Self.describe(error), report: section))
                 }
             }
         }

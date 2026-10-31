@@ -17,6 +17,8 @@ struct UnpackArguments: Equatable {
     var output: String?
     var askPassword = false
     var encoding: String = "auto"
+    /// Follow a failure with the ADR-0007 report on stderr.
+    var report = false
 }
 
 struct InspectArguments: Equatable {
@@ -71,6 +73,7 @@ enum CLIParse {
                 parsed.output = args[i + 1]
                 i += 1
             case "--password": parsed.askPassword = true
+            case "--report": parsed.report = true
             case "--encoding":
                 guard i + 1 < args.count else { return .failure(CLIParseError("--encoding requires a value")) }
                 let value = args[i + 1]
@@ -207,8 +210,10 @@ enum CLIRun {
         }
 
         let zipURL = URL(fileURLWithPath: parsed.input)
+        var failingEntry: Int?
         do {
-            let result = try runUnpack(zipURL: zipURL, options: options)
+            let result = try runUnpack(zipURL: zipURL, options: options,
+                                       failingEntry: { failingEntry = $0 })
             for name in result.skippedUnsafe { warn("skipped unsafe path: \(name)") }
             for name in result.skippedSymlinks { warn("skipped symlink: \(name)") }
             for rename in result.renamedDuplicates {
@@ -219,49 +224,72 @@ enum CLIRun {
             }
             print("\(result.root.path): \(result.extractedFiles) files (names: \(result.detectedEncoding.rawValue))")
             exit(0)
-        } catch let error as ZipReaderError {
-            switch error {
-            case .passwordRequired: fail("archive is encrypted — re-run with --password")
-            case .wrongPassword: fail("wrong password")
-            case .authenticationFailed(let name): fail("authentication failed for '\(name)' (wrong password or corrupted data)")
-            case .crcMismatch(let name): fail("CRC mismatch for '\(name)' (corrupted archive)")
-            case .notAZipFile: fail("'\(parsed.input)' is not a ZIP archive")
-            case .unsupportedMethod(let m): fail("unsupported compression method \(m)")
-            case .unsupportedFeature(let f): fail("unsupported feature: \(f)")
-            case .corrupt(let detail): fail("corrupted archive (\(detail))")
-            case .sizeExceedsDeclared(let name):
-                fail("'\(name)' expands beyond the size its header declares — refusing (possible decompression bomb)")
-            case .overlappingEntries:
-                fail("archive entries share overlapping data ranges — refusing (malformed or a decompression bomb)")
-            }
-        } catch let error as Unpacker.Failure {
-            switch error {
-            case .emptyArchive: fail("archive contains no extractable entries")
-            case .destinationNotADirectory(let path): fail("destination is not a directory: \(path)")
-            case .insufficientSpace(let required, let available):
-                fail("archive needs \(formatBytes(required)) but only \(formatBytes(available)) is free at the destination")
-            }
         } catch {
+            var text = "zip-porter: \(unpackFailureMessage(error, input: parsed.input))\n"
+            if parsed.report {
+                // The line above may name the file; the report never does
+                // (ADR-0007), so it is the part to paste into a reply.
+                text += "\n" + FailureReport.compose(
+                    environment: .current, operation: "extract", requested: 1,
+                    sections: [FailureReport.section(
+                        position: 0, error: FailureReport.describe(error),
+                        structure: FailureReport.structure(of: zipURL, failingEntry: failingEntry))])
+            }
+            FileHandle.standardError.write(Data(text.utf8))
+            exit(1)
+        }
+    }
+
+    /// The one-line stderr message for a failed unpack.
+    static func unpackFailureMessage(_ error: Error, input: String) -> String {
+        switch error {
+        case let error as ZipReaderError:
+            switch error {
+            case .passwordRequired: return "archive is encrypted — re-run with --password"
+            case .wrongPassword: return "wrong password"
+            case .authenticationFailed(let name): return "authentication failed for '\(name)' (wrong password or corrupted data)"
+            case .crcMismatch(let name): return "CRC mismatch for '\(name)' (corrupted archive)"
+            case .notAZipFile: return "'\(input)' is not a ZIP archive"
+            case .unsupportedMethod(let m): return "unsupported compression method \(m)"
+            case .unsupportedFeature(let f): return "unsupported feature: \(f)"
+            case .corrupt(let detail): return "corrupted archive (\(detail))"
+            case .entryCorrupt(let name, let detail): return "corrupted entry '\(name)' (\(detail))"
+            case .sizeExceedsDeclared(let name):
+                return "'\(name)' expands beyond the size its header declares — refusing (possible decompression bomb)"
+            case .overlappingEntries:
+                return "archive entries share overlapping data ranges — refusing (malformed or a decompression bomb)"
+            }
+        case let error as Unpacker.Failure:
+            switch error {
+            case .emptyArchive: return "archive contains no extractable entries"
+            case .destinationNotADirectory(let path): return "destination is not a directory: \(path)"
+            case .insufficientSpace(let required, let available):
+                return "archive needs \(formatBytes(required)) but only \(formatBytes(available)) is free at the destination"
+            }
+        default:
             if let name = ErrorMessages.takenName(from: error) {
                 // The exclusive create found something at a name that was
                 // free when it was chosen (ADR-0005): another writer got
                 // there first, and nothing of ours is left behind.
-                fail("another item appeared at '\(name)' while extracting — nothing was extracted; try again")
+                return "another item appeared at '\(name)' while extracting — nothing was extracted; try again"
             }
-            fail("\(error.localizedDescription)")
+            return error.localizedDescription
         }
     }
 
     /// Prompt-on-demand: when the archive turns out to be encrypted and no
     /// --password was given, ask interactively once and retry.
-    private static func runUnpack(zipURL: URL, options: Unpacker.Options) throws -> Unpacker.Result {
+    /// `passwordRequired` is thrown before any entry is reached, so the
+    /// first attempt never leaves a stale `failingEntry` behind.
+    private static func runUnpack(zipURL: URL, options: Unpacker.Options,
+                                  failingEntry: @escaping (Int) -> Void) throws -> Unpacker.Result {
         do {
-            return try Unpacker.unpack(zipURL: zipURL, options: options)
+            return try Unpacker.unpack(zipURL: zipURL, options: options, failingEntry: failingEntry)
         } catch let error as ZipReaderError where error == .passwordRequired && options.password == nil {
             guard let password = PasswordPrompt.read("Password: ") else { throw error }
             var retry = options
             retry.password = password
-            return try Unpacker.unpack(zipURL: zipURL, options: retry)
+            return try Unpacker.unpack(zipURL: zipURL, options: retry, failingEntry: failingEntry)
         }
     }
 

@@ -2,7 +2,12 @@ import Foundation
 
 public enum ZipReaderError: Error, Equatable {
     case notAZipFile
+    /// Structural damage. The detail never names an entry — an entry's
+    /// damage is `entryCorrupt`, so the failure report can leave names out
+    /// by construction (ADR-0007).
     case corrupt(String)
+    /// One entry's data is damaged; `detail` holds no name.
+    case entryCorrupt(entryName: String, detail: String)
     case unsupportedMethod(UInt16)
     case unsupportedFeature(String)
     case passwordRequired
@@ -30,16 +35,35 @@ public final class ZipReader {
     public private(set) var entries: [ZipEntry] = []
     /// Encoding decided for entries that lack the UTF-8 flag.
     public private(set) var detectedEncoding: NameEncoding = .utf8
+    /// The end-of-central-directory record pointed to a ZIP64 record.
+    public private(set) var hasZip64Directory = false
+    /// Size of the archive file in bytes.
+    public var archiveSize: UInt64 { fileSize }
     /// Window reads `resolveEntryRanges` issued — observable so a test can
     /// pin that opening stays cheap (ADR-0005).
     private(set) var localHeaderReads = 0
 
-    public init(url: URL) throws {
+    public convenience init(url: URL) throws {
+        try self.init(url: url, resolvingRanges: true)
+    }
+
+    /// The central directory alone, as data, for the failure report
+    /// (ADR-0007): an archive refused at open for its local headers or
+    /// overlapping ranges still has a structure worth reporting. Returns
+    /// values rather than a reader — without resolved data offsets, a
+    /// reader must not extract anything.
+    public static func centralDirectory(of url: URL) throws
+        -> (entries: [ZipEntry], archiveSize: UInt64, hasZip64Directory: Bool) {
+        let reader = try ZipReader(url: url, resolvingRanges: false)
+        return (reader.entries, reader.fileSize, reader.hasZip64Directory)
+    }
+
+    private init(url: URL, resolvingRanges: Bool) throws {
         file = try FileHandle(forReadingFrom: url)
         fileSize = try file.seekToEnd()
         do {
             try parseCentralDirectory()
-            try resolveEntryRanges()
+            if resolvingRanges { try resolveEntryRanges() }
         } catch {
             try? file.close()
             throw error
@@ -187,6 +211,7 @@ public final class ZipReader {
         var cdOffset = UInt64(try tail.readU32(at: eocd + 16))
 
         if totalEntries == 0xFFFF || cdSize == 0xFFFF_FFFF || cdOffset == 0xFFFF_FFFF {
+            hasZip64Directory = true
             // ZIP64: locator sits immediately before the EOCD. A file whose
             // EOCD starts within 20 bytes of the front has nowhere to put
             // one — subtracting first would trap on UInt64 underflow.
@@ -226,6 +251,7 @@ public final class ZipReader {
                 throw ZipReaderError.corrupt("central header at \(pos)")
             }
             let versionMadeBy = try cd.readU16(at: pos + 4)
+            let versionNeeded = try cd.readU16(at: pos + 6)
             let flags = Zip.Flags(rawValue: try cd.readU16(at: pos + 8))
             let methodRaw = try cd.readU16(at: pos + 10)
             let dosTime = try cd.readU16(at: pos + 12)
@@ -246,12 +272,14 @@ public final class ZipReader {
 
             // Extra fields: ZIP64 sizes/offset and the WinZip AES descriptor.
             var aesInfo: (vendorVersion: UInt8, strength: Zip.AESStrength, actualMethod: UInt16)?
+            var extraFieldIDs: [UInt16] = []
             var e = pos + 46 + nameLen
             let extraEnd = e + extraLen
             while e + 4 <= extraEnd {
                 let id = try cd.readU16(at: e)
                 let size = Int(try cd.readU16(at: e + 2))
                 guard e + 4 + size <= extraEnd else { break }
+                extraFieldIDs.append(id)
                 switch id {
                 case Zip.ExtraID.zip64:
                     var f = e + 4
@@ -275,6 +303,11 @@ public final class ZipReader {
                 }
                 e += 4 + size
             }
+            // A walk that does not land exactly on the end went astray at
+            // some field's length, and what it read after that point were
+            // bytes of field data — a Unicode Path field holds the entry
+            // name — not IDs. The report must not print them (ADR-0007).
+            let extraFieldIDsIfWellFormed = e == extraEnd ? extraFieldIDs : nil
 
             let method = Zip.Method(rawValue: methodRaw)
             var encryption: Zip.Encryption = .none
@@ -303,7 +336,9 @@ public final class ZipReader {
                 localHeaderOffset: localOffset,
                 externalAttributes: externalAttr,
                 versionMadeBy: versionMadeBy,
-                encryption: encryption))
+                encryption: encryption,
+                versionNeeded: versionNeeded,
+                extraFieldIDs: extraFieldIDsIfWellFormed))
 
             pos += 46 + nameLen + extraLen + commentLen
         }
@@ -416,7 +451,8 @@ public final class ZipReader {
                 case .truncated: reason = "stream ends early"
                 case .invalid(let detail): reason = detail
                 }
-                throw ZipReaderError.corrupt("\(name(of: entry)): Deflate64 \(reason)")
+                throw ZipReaderError.entryCorrupt(entryName: name(of: entry),
+                                                  detail: "Deflate64 \(reason)")
             }
             // The stream may end before the payload does; read the rest so
             // the AES trailer is found where it is and its HMAC covers
@@ -425,17 +461,22 @@ public final class ZipReader {
         } else {
             let inflater = effectiveMethod == .deflate ? try DeflateStream(.decompress) : nil
             let payloadLength = remaining
-            while let chunk = try nextChunk() {
-                if let inflater {
-                    try inflater.process(chunk, final: remaining == 0, sink: out)
-                } else {
-                    try out(chunk)
+            do {
+                while let chunk = try nextChunk() {
+                    if let inflater {
+                        try inflater.process(chunk, final: remaining == 0, sink: out)
+                    } else {
+                        try out(chunk)
+                    }
                 }
-            }
-            if payloadLength == 0, let inflater {
-                // Zero-length ciphertext/payload: the loop never ran, so the
-                // inflater still needs its FINALIZE spin.
-                try inflater.process(Data(), final: true, sink: out)
+                if payloadLength == 0, let inflater {
+                    // Zero-length ciphertext/payload: the loop never ran, so the
+                    // inflater still needs its FINALIZE spin.
+                    try inflater.process(Data(), final: true, sink: out)
+                }
+            } catch DeflateStream.Failure.corruptInput {
+                throw ZipReaderError.entryCorrupt(entryName: name(of: entry),
+                                                  detail: "Deflate stream is invalid")
             }
         }
 
@@ -447,7 +488,8 @@ public final class ZipReader {
         }
 
         guard outCount == entry.uncompressedSize else {
-            throw ZipReaderError.corrupt("size mismatch for \(name(of: entry))")
+            throw ZipReaderError.entryCorrupt(entryName: name(of: entry),
+                                              detail: "size differs from the declared size")
         }
         // AE-2 zeroes the CRC field; the HMAC above already verified integrity.
         if case .aes(_, let vendorVersion, _) = entry.encryption, vendorVersion >= 2 {

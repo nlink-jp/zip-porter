@@ -57,6 +57,13 @@ ZipPorter を起動してウィンドウにドロップするだけです:
   出さず、処理が終わり次第アプリも終了します
   （ウィンドウへのドロップでは常駐したまま）。処理中に開かれたアーカイブは
   順番待ちに入って順次処理されます
+- **失敗したとき**は、エラーのダイアログ（一部のアーカイブが失敗したときは
+  結果ダイアログ）に **詳細をコピー** ボタンが出ます。失敗について尋ねてきた
+  相手に送るための平文の報告をクリップボードに入れます。中身は ZipPorter と
+  macOS の版、エラー、アーカイブの構造（圧縮方式・暗号・作成元のホストと版・
+  拡張フィールドの ID・失敗した項目の形）です。ファイル名・項目名・パス・
+  中身・パスワードは決して含まないので、アーカイブそのものを渡せない場合でも
+  送れます（[ADR-0007](docs/ja/adr/0007-failure-report.ja.md)）
 - **設定**（ウィンドウ内の歯車ボタン、または ⌘,）— The Unarchiver 風の
   展開設定: 展開先（同じフォルダ/毎回確認/固定フォルダ）、新規フォルダ
   作成（しない/複数最上位項目のみ/常に）、作成フォルダの変更日、
@@ -93,7 +100,7 @@ ln -s "/Applications/ZipPorter.app/Contents/MacOS/ZipPorter" /usr/local/bin/zip-
 
 ```
 zip-porter pack <input>... [-o <output.zip>] [--password] [--cp932] [--zipcrypto] [--no-clean]
-zip-porter unpack <input.zip> [-o <dest-dir>] [--password] [--encoding auto|utf8|cp932]
+zip-porter unpack <input.zip> [-o <dest-dir>] [--password] [--encoding auto|utf8|cp932] [--report]
 zip-porter inspect <input.zip>
 zip-porter --version
 ```
@@ -128,6 +135,9 @@ zip-porter --version
   既存ファイルは上書きせず「name 2」形式
 - 既定は ZIP と同じフォルダに展開。`-o <dir>` 指定時は `unzip -d` 同様
   必要なら作成
+- `--report` を付けると、失敗時に GUI の「詳細をコピー」と同じ報告を
+  stderr に出します。その前の 1 行のメッセージはファイル名を含むことが
+  ありますが、報告は決して含みません
 
 ### 展開時のセキュリティ対策
 

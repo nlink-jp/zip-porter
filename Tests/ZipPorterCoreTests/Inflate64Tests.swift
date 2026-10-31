@@ -520,7 +520,8 @@ final class Inflate64Tests: XCTestCase {
         w.put(1, 1); w.put(3, 2)
         let reader = try ZipReader(url: try rawZip(method: 9, payload: w.data, uncompressedSize: 10))
         XCTAssertThrowsError(try reader.extractData(reader.entries[0])) { error in
-            XCTAssertEqual(error as? ZipReaderError, .corrupt("a.bin: Deflate64 reserved block type"))
+            XCTAssertEqual(error as? ZipReaderError,
+                           .entryCorrupt(entryName: "a.bin", detail: "Deflate64 reserved block type"))
         }
     }
 

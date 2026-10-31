@@ -51,7 +51,8 @@ Sources/ZipPorterCore/      UI-independent engine (no AppKit): CRC32, DOSDateTim
                             JunkFilter, FileNameTransform, Packer, Unpacker, PathUtil,
                             PosixPermissions, XattrUtil, ZeroingBytes, SingleInstance,
                             ParallelCompressor (+ ScratchArena, MemoryLedger), ZlibDeflate,
-                            Inflate64 (Deflate64 / method 9 decoder)
+                            Inflate64 (Deflate64 / method 9 decoder),
+                            ArchiveDiagnostics (failure report's structure lines)
 Sources/ZipPorter/          AppKit app + CLI: App (entry/routing/delegate), CLI (usage),
                             CLICommands (parse + run), PasswordPrompt, MainMenu,
                             MainViewController (flows), OneShotQuit (lifetime
@@ -60,7 +61,8 @@ Sources/ZipPorter/          AppKit app + CLI: App (entry/routing/delegate), CLI 
                             Sheets (options/
                             password/progress), SettingsWindow, Preferences, L10n,
                             ErrorMessages (engine errors → sentences, shared
-                            with the CLI, tested), Resources/{en,ja}.lproj
+                            with the CLI, tested), FailureReport ("Copy
+                            Details" / --report text), Resources/{en,ja}.lproj
 Tests/ZipPorterCoreTests/   engine tests + testdata/ cross-verification fixtures
 Tests/ZipPorterTests/       CLI routing/parsing, localization, main-menu, quit rule,
                             batch reporting tests
@@ -69,7 +71,8 @@ docs/{en,ja}/               RFP (design of record) + adr/ (0001 hardening,
                             0002 parallel compression, 0003 zlib parallel deflate,
                             0004 batch completion, 0005 review response: ownership
                             ledger / local-header ranges / memory budget,
-                            0006 Deflate64 extraction) — mirrored en/ja
+                            0006 Deflate64 extraction, 0007 failure report)
+                            — mirrored en/ja
 ```
 
 ## Project rules
@@ -147,6 +150,18 @@ docs/{en,ja}/               RFP (design of record) + adr/ (0001 hardening,
   only. `testOneLargeBlockArrivesInBoundedPieces` is what catches a missing
   flush check — without it the decoder writes past its buffer (it shows as
   a crashed test process, not an assertion).
+- **The failure report never carries a name** (ADR-0007): no file, entry,
+  or archive name, path, content, CRC, timestamp, or password — the people
+  who send it cannot share the archive. Names in errors live only in labeled
+  `entryName` fields (`entryCorrupt`, `crcMismatch`, …); `corrupt` details
+  and Inflate64 reasons are offsets and fixed phrases, pinned by
+  `testErrorDetailsNeverInterpolateANameOrPath`. `FailureReport.describe`
+  is an exhaustive switch over our own errors (never `String(describing:)`,
+  which prints the names) and reports foreign errors as NSError domain/code
+  only. The structure comes from `ZipReader.centralDirectory(of:)`, so an
+  archive refused at open is still described; extra-field IDs are dropped
+  for an entry whose field lengths do not add up. A new error case must
+  decide what it reports — the switch does not compile until it does.
 - **Defaults are modern** (UTF-8+NFC, AES-256); CP932 / ZipCrypto stay
   opt-in flags with warnings.
 - `make build`, never bare `swift build` outputs into the repo root.

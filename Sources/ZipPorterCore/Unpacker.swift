@@ -120,10 +120,15 @@ public enum Unpacker {
     /// from the central directory, so the fraction is exact);
     /// `shouldCancel` is polled between entries — on cancellation the
     /// half-written tree is removed and `CancellationError` is thrown.
+    /// `failingEntry` receives the central-directory index of the entry
+    /// being extracted when the extraction throws — called at most once,
+    /// and not at all for a failure outside any one entry. The thrown error
+    /// is unchanged (ADR-0007).
     public static func unpack(zipURL: URL,
                               options: Options = Options(),
                               progress: ((OperationProgress) -> Void)? = nil,
-                              shouldCancel: (() -> Bool)? = nil) throws -> Result {
+                              shouldCancel: (() -> Bool)? = nil,
+                              failingEntry: ((Int) -> Void)? = nil) throws -> Result {
         let reader = try ZipReader(url: zipURL)
         let destBase = options.destination ?? zipURL.deletingLastPathComponent()
         var isDir: ObjCBool = false
@@ -139,7 +144,7 @@ public enum Unpacker {
         var skippedUnsafe: [String] = []
         var skippedSymlinks: [String] = []
         var renamedDuplicates: [(original: String, chosen: String)] = []
-        var work: [(entry: ZipEntry, components: [String])] = []
+        var work: [(index: Int, entry: ZipEntry, components: [String])] = []
         // Collision keys are NFC + case-folded because APFS is
         // case-insensitive by default and stores either normalization —
         // "Report.txt", "report.txt" and an NFD "データ.txt" all land on
@@ -155,7 +160,7 @@ public enum Unpacker {
         // byte is written (`claimTopLevelDirectories` below).
         var topFolderNames = Set<String>()
 
-        for entry in reader.entries {
+        for (index, entry) in reader.entries.enumerated() {
             let name = reader.name(of: entry, forcedEncoding: options.forcedEncoding)
             guard var components = sanitize(name) else {
                 skippedUnsafe.append(name)
@@ -184,7 +189,7 @@ public enum Unpacker {
             if entry.isDirectory || components.count > 1 {
                 topFolderNames.insert(components[0])
             }
-            work.append((entry, components))
+            work.append((index, entry, components))
         }
         guard !work.isEmpty else { throw Failure.emptyArchive }
 
@@ -317,66 +322,75 @@ public enum Unpacker {
         }
 
         func extractAll() throws {
-            for (entry, rawComponents) in work {
+            for (index, entry, rawComponents) in work {
                 if shouldCancel?() == true { throw CancellationError() }
-                var components = rawComponents
-                let entryPath = rawComponents.joined(separator: "/")
-                progress?(OperationProgress(currentPath: entryPath,
-                                            processedBytes: processedBytes,
-                                            totalBytes: totalBytes))
-                if let renamed = renames[components[0]] {
-                    components[0] = renamed
+                do {
+                    try extractOne(entry, rawComponents)
+                } catch {
+                    failingEntry?(index)
+                    throw error
                 }
-                let target = components.reduce(base) { $0.appendingPathComponent($1) }
-
-                if entry.isDirectory {
-                    try FileManager.default.createDirectory(at: target, withIntermediateDirectories: true)
-                    recordDirectories(components)
-                    directories += 1
-                } else {
-                    try FileManager.default.createDirectory(
-                        at: target.deletingLastPathComponent(), withIntermediateDirectories: true)
-                    recordDirectories(components.dropLast())
-                    let out = try PathUtil.createExclusively(at: target)
-                    if !wrap, components.count == 1 {
-                        // O_EXCL succeeded: this top-level file is ours.
-                        owned.adopt(target)
-                    }
-                    // A failure below leaves the partial file to the outer
-                    // cleanup: it lives inside an owned top-level item (or is
-                    // one), and the ledger is the only remover (ADR-0005).
-                    do {
-                        try reader.extract(entry, password: options.password) { chunk in
-                            try out.write(contentsOf: chunk)
-                            processedBytes &+= UInt64(chunk.count)
-                            progress?(OperationProgress(currentPath: entryPath,
-                                                        processedBytes: processedBytes,
-                                                        totalBytes: totalBytes))
-                        }
-                        try out.close()
-                    } catch {
-                        try? out.close()
-                        throw error
-                    }
-                    files += 1
-                }
-
-                var attrs: [FileAttributeKey: Any] = [:]
-                if let mtime = DOSDateTime.toDate(date: entry.dosDate, time: entry.dosTime) {
-                    attrs[.modificationDate] = mtime
-                }
-                if let mode = entry.unixMode {
-                    // The archive asks; the umask decides. Owner bits are
-                    // kept so we never lock ourselves out.
-                    attrs[.posixPermissions] = NSNumber(
-                        value: PosixPermissions.extracted(mode: mode,
-                                                          isDirectory: entry.isDirectory))
-                }
-                if !attrs.isEmpty {
-                    try? FileManager.default.setAttributes(attrs, ofItemAtPath: target.path)
-                }
-                applyQuarantine(to: target, named: entryPath)
             }
+        }
+
+        func extractOne(_ entry: ZipEntry, _ rawComponents: [String]) throws {
+            var components = rawComponents
+            let entryPath = rawComponents.joined(separator: "/")
+            progress?(OperationProgress(currentPath: entryPath,
+                                        processedBytes: processedBytes,
+                                        totalBytes: totalBytes))
+            if let renamed = renames[components[0]] {
+                components[0] = renamed
+            }
+            let target = components.reduce(base) { $0.appendingPathComponent($1) }
+
+            if entry.isDirectory {
+                try FileManager.default.createDirectory(at: target, withIntermediateDirectories: true)
+                recordDirectories(components)
+                directories += 1
+            } else {
+                try FileManager.default.createDirectory(
+                    at: target.deletingLastPathComponent(), withIntermediateDirectories: true)
+                recordDirectories(components.dropLast())
+                let out = try PathUtil.createExclusively(at: target)
+                if !wrap, components.count == 1 {
+                    // O_EXCL succeeded: this top-level file is ours.
+                    owned.adopt(target)
+                }
+                // A failure below leaves the partial file to the outer
+                // cleanup: it lives inside an owned top-level item (or is
+                // one), and the ledger is the only remover (ADR-0005).
+                do {
+                    try reader.extract(entry, password: options.password) { chunk in
+                        try out.write(contentsOf: chunk)
+                        processedBytes &+= UInt64(chunk.count)
+                        progress?(OperationProgress(currentPath: entryPath,
+                                                    processedBytes: processedBytes,
+                                                    totalBytes: totalBytes))
+                    }
+                    try out.close()
+                } catch {
+                    try? out.close()
+                    throw error
+                }
+                files += 1
+            }
+
+            var attrs: [FileAttributeKey: Any] = [:]
+            if let mtime = DOSDateTime.toDate(date: entry.dosDate, time: entry.dosTime) {
+                attrs[.modificationDate] = mtime
+            }
+            if let mode = entry.unixMode {
+                // The archive asks; the umask decides. Owner bits are
+                // kept so we never lock ourselves out.
+                attrs[.posixPermissions] = NSNumber(
+                    value: PosixPermissions.extracted(mode: mode,
+                                                      isDirectory: entry.isDirectory))
+            }
+            if !attrs.isEmpty {
+                try? FileManager.default.setAttributes(attrs, ofItemAtPath: target.path)
+            }
+            applyQuarantine(to: target, named: entryPath)
         }
 
         do {
