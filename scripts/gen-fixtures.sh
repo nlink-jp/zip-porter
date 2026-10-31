@@ -66,8 +66,29 @@ if command -v 7zz >/dev/null 2>&1; then
     cp "$work/sevenzip-aes256.zip" "$td/sevenzip-aes256.zip"
     (cd "$src" && 7zz a -tzip -mem=AES128 -p's3cret-pass' "$work/sevenzip-aes128.zip" . >/dev/null)
     cp "$work/sevenzip-aes128.zip" "$td/sevenzip-aes128.zip"
+
+    # --- Deflate64 (method 9, ADR-0006) --------------------------------------
+    # long-match.bin repeats a 40 KiB random block four times: the repeats
+    # sit 40960 bytes back (distance code 30, Deflate64 only); the tests
+    # assert that code was decoded rather than trusting this comment.
+    # 7-Zip never emits the 16-extra-bit length code 285 even here, so that
+    # one is covered by hand-built streams in Inflate64Tests.
+    d64="$work/d64"
+    cp -R "$src" "$d64"
+    python3 -I -c '
+import random, sys
+r = random.Random(64)
+block = bytes(r.getrandbits(8) for _ in range(40960))
+open(sys.argv[1], "wb").write(block * 4)' "$d64/long-match.bin"
+    # Compressible text, so an ordinary-looking entry is Deflate64 too (the
+    # three small files above come out stored).
+    for i in $(seq 1 400); do printf '%d 行目: 売上データの集計結果\n' "$i"; done > "$d64/text.txt"
+    (cd "$d64" && 7zz a -tzip -mm=Deflate64 "$work/sevenzip-deflate64.zip" . >/dev/null)
+    cp "$work/sevenzip-deflate64.zip" "$td/sevenzip-deflate64.zip"
+    (cd "$d64" && 7zz a -tzip -mm=Deflate64 -mem=AES256 -p's3cret-pass' "$work/sevenzip-deflate64-aes256.zip" . >/dev/null)
+    cp "$work/sevenzip-deflate64-aes256.zip" "$td/sevenzip-deflate64-aes256.zip"
 else
-    echo "[gen-fixtures] WARN: 7zz not found — AES fixtures not regenerated" >&2
+    echo "[gen-fixtures] WARN: 7zz not found — AES and Deflate64 fixtures not regenerated" >&2
 fi
 
 ls -la "$td"

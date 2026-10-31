@@ -30,6 +30,9 @@ enum ErrorMessages {
                 return L("This file is not a ZIP archive.")
             case .corrupt(let detail):
                 return L("The archive is malformed and was refused.") + "\n\(detail)"
+            case .unsupportedMethod(let method):
+                return String(format: L("This archive uses a compression method ZipPorter cannot extract (method %d)."),
+                              Int(method))
             default:
                 return "\(e)"
             }

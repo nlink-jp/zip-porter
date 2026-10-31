@@ -11,8 +11,9 @@ app that works fully offline:
   stored as NFC-normalized UTF-8 (no more split-dakuten "テ゛ータ"), and
   password protection (AES-256) is built in
 - **Extract** ZIPs made on Windows: CP932 (Shift_JIS) file names are
-  auto-detected and decoded, and both ZipCrypto and AES encrypted archives
-  are supported
+  auto-detected and decoded, both ZipCrypto and AES encrypted archives
+  are supported, and so is Deflate64 — the method Windows Explorer
+  switches to for archives over about 2 GB
 - **Legacy compatibility on demand**: `--cp932` stores file names for old
   Japanese Windows tools; `--zipcrypto` produces archives Windows Explorer
   can open standalone (with a weakness warning)
@@ -123,6 +124,10 @@ Run with no command to launch the GUI.
   `--encoding utf8|cp932`
 - Extracts ZipCrypto and AES-128/192/256 (AE-1/AE-2) archives; prompts for
   a password on demand
+- Compression methods: store, Deflate, and Deflate64 (method 9 — what
+  Windows Explorer writes once the files exceed about 2 GB; read only,
+  never written). Other methods (bzip2, LZMA, …) are reported by number
+  ([ADR-0006](docs/en/adr/0006-deflate64-extraction.md))
 - A single top-level item extracts as itself; anything else is wrapped in
   a folder named after the archive. Existing files are never overwritten
   ("name 2")

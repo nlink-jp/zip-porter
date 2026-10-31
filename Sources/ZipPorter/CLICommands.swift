@@ -291,6 +291,7 @@ enum CLIRun {
                 switch entry.method {
                 case .store: method = "store"
                 case .deflate: method = "deflate"
+                case .deflate64: method = "deflate64"
                 case .aes: method = "aes"
                 case .other(let m): method = "method#\(m)"
                 }

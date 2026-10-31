@@ -2,7 +2,28 @@
 
 ## [Unreleased]
 
+### Added
+
+- **Deflate64 extraction (ZIP method 9).** Windows Explorer's built-in
+  "Compressed (zipped) folder" switches from Deflate to Deflate64 once the
+  files it packs exceed about 2 GB, and ZipPorter refused every such archive
+  (`unsupportedMethod(9)`) while `unzip` and 7-Zip read it. Method 9 is now
+  decoded by an in-house streaming decoder (`Inflate64`, pure Swift — macOS
+  ships none and the organization adopts no community libraries), inside
+  ZipCrypto/AES archives too, under the same per-entry size bound and CRC
+  check as every other method. Read only; ZipPorter never writes it.
+  Measured on a 2.8 GB (2 936 012 800-byte) file packed by 7-Zip as
+  Deflate64: extracted in 10 s with a matching SHA-256 — `unzip` takes
+  11 s for the same archive writing to `/dev/null`.
+  Cross-verified against 7-Zip Deflate64 fixtures, zlib output, and
+  hand-built streams for the Deflate64-only codes and every rejection rule
+  (ADR-0006).
+
 ### Fixed
+
+- **An archive in a compression method ZipPorter cannot read now says so
+  in a sentence** naming the method number, instead of showing
+  `unsupportedMethod(…)` untranslated.
 
 - The release zip no longer carries AppleDouble (`._*`) entries: the app is
   zipped with `ditto --norsrc --noextattr`, so its signature survives unpacking

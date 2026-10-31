@@ -12,7 +12,8 @@ zip-porter は MacWinZipper（作成側）と The Unarchiver（展開側・ZIP �
   NFC 正規化した UTF-8 で格納（「テ゛ータ」のような濁点分離を解消）。
   パスワード保護（AES-256）を標準搭載
 - **展開**: Windows 製 ZIP を正しく開く — CP932（Shift_JIS）ファイル名を
-  自動判定してデコードし、ZipCrypto / AES 暗号化アーカイブの両方に対応
+  自動判定してデコードし、ZipCrypto / AES 暗号化アーカイブの両方に対応。
+  Windows エクスプローラが約 2GB を超えると使う Deflate64 にも対応
 - **レガシー互換は opt-in**: `--cp932` で古い日本語 Windows ツール向けの
   ファイル名格納、`--zipcrypto` で Windows Explorer 単体で開ける
   アーカイブを作成（強度警告あり）
@@ -119,6 +120,10 @@ zip-porter --version
   `--encoding utf8|cp932` で強制指定可
 - ZipCrypto / AES-128/192/256（AE-1/AE-2）を展開可能。必要時に
   パスワードをプロンプト
+- 圧縮方式: store・Deflate・Deflate64（方式 9。Windows エクスプローラが
+  合計約 2GB を超えると使う方式。展開のみで、作成はしない）。それ以外の
+  方式（bzip2、LZMA など）は方式番号を示してお知らせします
+  （[ADR-0006](docs/ja/adr/0006-deflate64-extraction.ja.md)）
 - トップレベルが単一ならそのまま、複数なら ZIP 名のフォルダにラップ。
   既存ファイルは上書きせず「name 2」形式
 - 既定は ZIP と同じフォルダに展開。`-o <dir>` 指定時は `unzip -d` 同様

@@ -36,6 +36,13 @@ final class ErrorMessagesTests: XCTestCase {
         XCTAssertFalse(message.contains("corrupt("), "no enum dump: \(message)")
     }
 
+    func testUnsupportedMethodReadsAsASentenceNamingTheMethod() {
+        let message = ErrorMessages.describe(ZipReaderError.unsupportedMethod(12))
+        XCTAssertEqual(message, String(format: L("This archive uses a compression method ZipPorter cannot extract (method %d)."), 12))
+        XCTAssertTrue(message.contains("12"), message)
+        XCTAssertFalse(message.contains("unsupportedMethod("), "no enum dump: \(message)")
+    }
+
     func testExistingMessagesAreUnchanged() {
         XCTAssertEqual(ErrorMessages.describe(ZipReaderError.notAZipFile), L("This file is not a ZIP archive."))
         XCTAssertEqual(ErrorMessages.describe(Unpacker.Failure.emptyArchive),

@@ -327,7 +327,7 @@ public final class ZipReader {
             effectiveMethod = entry.method
         }
         switch effectiveMethod {
-        case .store, .deflate:
+        case .store, .deflate, .deflate64:
             break
         case .aes, .other:
             throw ZipReaderError.unsupportedMethod(effectiveMethod.rawValue)
@@ -397,24 +397,46 @@ public final class ZipReader {
             try sink(d)
         }
 
-        let inflater = effectiveMethod == .deflate ? try DeflateStream(.decompress) : nil
-        let payloadLength = remaining
-        while remaining > 0 {
+        func nextChunk() throws -> Data? {
+            guard remaining > 0 else { return nil }
             let n = Int(min(remaining, UInt64(Self.chunkSize)))
             var chunk = try read(at: offset, count: n)
             offset += UInt64(n)
             remaining -= UInt64(n)
             if let decryptor { chunk = decryptor.process(chunk) }
-            if let inflater {
-                try inflater.process(chunk, final: remaining == 0, sink: out)
-            } else {
-                try out(chunk)
-            }
+            return chunk
         }
-        if payloadLength == 0, let inflater {
-            // Zero-length ciphertext/payload: the loop never ran, so the
-            // inflater still needs its FINALIZE spin.
-            try inflater.process(Data(), final: true, sink: out)
+
+        if effectiveMethod == .deflate64 {
+            do {
+                try Inflate64.decode(input: nextChunk, sink: out)
+            } catch let failure as Inflate64.Failure {
+                let reason: String
+                switch failure {
+                case .truncated: reason = "stream ends early"
+                case .invalid(let detail): reason = detail
+                }
+                throw ZipReaderError.corrupt("\(name(of: entry)): Deflate64 \(reason)")
+            }
+            // The stream may end before the payload does; read the rest so
+            // the AES trailer is found where it is and its HMAC covers
+            // every byte (ADR-0006).
+            while try nextChunk() != nil {}
+        } else {
+            let inflater = effectiveMethod == .deflate ? try DeflateStream(.decompress) : nil
+            let payloadLength = remaining
+            while let chunk = try nextChunk() {
+                if let inflater {
+                    try inflater.process(chunk, final: remaining == 0, sink: out)
+                } else {
+                    try out(chunk)
+                }
+            }
+            if payloadLength == 0, let inflater {
+                // Zero-length ciphertext/payload: the loop never ran, so the
+                // inflater still needs its FINALIZE spin.
+                try inflater.process(Data(), final: true, sink: out)
+            }
         }
 
         if let decryptor {

@@ -11,8 +11,8 @@ clean, ad-free, fully-local app. **Apple Silicon, macOS 14+.**
 auto-detect, junk filter), full CLI (`pack` / `unpack` / `inspect`), and
 the AppKit GUI (drop window, pack options sheet, Unarchiver-style
 extraction settings window, `.zip` handling, en/ja l10n, icon). ~200 tests
-including cross-verification against Info-ZIP, ditto, 7-Zip, and Python
-zipfile; output real-machine verified on Windows Explorer. Design of
+including cross-verification against Info-ZIP, ditto, 7-Zip (Deflate64
+included), and Python zipfile; output real-machine verified on Windows Explorer. Design of
 record: `docs/en/zip-porter-rfp.md` / `docs/ja/zip-porter-rfp.ja.md`.
 
 ## Build / test / run
@@ -50,7 +50,8 @@ Sources/ZipPorterCore/      UI-independent engine (no AppKit): CRC32, DOSDateTim
                             ZipCryptoCipher, WinZipAES, EncodingDetector,
                             JunkFilter, FileNameTransform, Packer, Unpacker, PathUtil,
                             PosixPermissions, XattrUtil, ZeroingBytes, SingleInstance,
-                            ParallelCompressor (+ ScratchArena, MemoryLedger), ZlibDeflate
+                            ParallelCompressor (+ ScratchArena, MemoryLedger), ZlibDeflate,
+                            Inflate64 (Deflate64 / method 9 decoder)
 Sources/ZipPorter/          AppKit app + CLI: App (entry/routing/delegate), CLI (usage),
                             CLICommands (parse + run), PasswordPrompt, MainMenu,
                             MainViewController (flows), OneShotQuit (lifetime
@@ -67,7 +68,8 @@ scripts/                    vendored org templates + gen-fixtures.sh
 docs/{en,ja}/               RFP (design of record) + adr/ (0001 hardening,
                             0002 parallel compression, 0003 zlib parallel deflate,
                             0004 batch completion, 0005 review response: ownership
-                            ledger / local-header ranges / memory budget) — mirrored en/ja
+                            ledger / local-header ranges / memory budget,
+                            0006 Deflate64 extraction) — mirrored en/ja
 ```
 
 ## Project rules
@@ -131,6 +133,20 @@ docs/{en,ja}/               RFP (design of record) + adr/ (0001 hardening,
   is needed and an exact-multiple-of-blockSize file still ends properly
   (there is a test). Never "optimize away" that empty final block.
   Cross-verified against unzip / 7zz / ditto / Python zipfile.
+- **Method 9 (Deflate64) is decoded by our own `Inflate64`** (ADR-0006):
+  Windows Explorer writes it once the input passes ~2 GB, and neither the
+  Compression framework nor the system zlib decodes it. Read-only — never
+  write method 9. Method 8 stays on the Compression framework; the
+  `.deflate` variant of `Inflate64` exists for tests (run over zlib output),
+  not as a second production path. The decoder pulls payload through
+  `ZipReader.extract`'s `nextChunk()` and pushes into the same `out` sink,
+  so the size bound, CRC, and ZipCrypto/AES handling are shared — and the
+  reader drains the payload after the final block so the AES trailer and
+  HMAC see every byte. 7-Zip's Deflate64 encoder never emits the
+  16-extra-bit length code 285; that path is covered by hand-built streams
+  only. `testOneLargeBlockArrivesInBoundedPieces` is what catches a missing
+  flush check — without it the decoder writes past its buffer (it shows as
+  a crashed test process, not an assertion).
 - **Defaults are modern** (UTF-8+NFC, AES-256); CP932 / ZipCrypto stay
   opt-in flags with warnings.
 - `make build`, never bare `swift build` outputs into the repo root.

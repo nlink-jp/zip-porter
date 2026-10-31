@@ -22,6 +22,9 @@ public enum Zip {
     public enum Method: Equatable, Sendable {
         case store
         case deflate
+        /// Method 9, "enhanced deflate": read-only — Windows Explorer writes
+        /// it past ~2 GB; we never do (ADR-0006).
+        case deflate64
         /// Method 99: WinZip AES wrapper; the real method is in the 0x9901 extra field.
         case aes
         case other(UInt16)
@@ -30,6 +33,7 @@ public enum Zip {
             switch rawValue {
             case 0: self = .store
             case 8: self = .deflate
+            case 9: self = .deflate64
             case 99: self = .aes
             default: self = .other(rawValue)
             }
@@ -39,6 +43,7 @@ public enum Zip {
             switch self {
             case .store: return 0
             case .deflate: return 8
+            case .deflate64: return 9
             case .aes: return 99
             case .other(let v): return v
             }
