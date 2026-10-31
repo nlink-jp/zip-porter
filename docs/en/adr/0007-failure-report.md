@@ -161,6 +161,18 @@ name to say what the content is.
   `localizedDescription` texts. A report may say `NSCocoaErrorDomain 640`
   where the on-screen sentence said which file could not be written; the
   person still sees the sentence.
+- The extra-field check is probabilistic, not a guarantee. A field that
+  under-states its length makes the walk read field data as IDs; the
+  walk is trusted only when it ends exactly on the extra area. For two
+  bytes of a Unicode Path name to pass as an ID, the next misread length
+  must also land on that end — a jump of 257 bytes or more for UTF-8
+  text. Accepted: closing it needs per-field knowledge of every
+  name-carrying extra field, for two bytes in a corner of a corner.
+- A damaged or tampered AES entry holding Deflate data reports
+  `entryCorrupt: Deflate stream is invalid`, because inflation fails before
+  the HMAC is checked. When reading a report for an encrypted entry, read
+  that as "damaged, tampered with, or a wrong password the 2-byte verifier
+  let through". Unchanged from before; only the label is new.
 - New error cases must keep names in labeled `entryName` fields; the
   report's rendering switch is exhaustive over ZipPorter's own errors, so
   a new case does not compile until someone decides what it reports.
